@@ -33,7 +33,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--instruments', type=str, nargs='+', default=["bass", "drums", "other", "vocals"],
+    parser.add_argument('--instruments', type=str, nargs='+', default=["voice", "piano_speaker_bleed"],
                         help="List of instruments to separate (default: \"bass drums other vocals\")")
     parser.add_argument('--cuda', action='store_true',
                         help='Use CUDA (default: False)')
@@ -49,7 +49,7 @@ if __name__ == '__main__':
                         help="Number of convs per block")
     parser.add_argument('--sr', type=int, default=44100,
                         help="Sampling rate")
-    parser.add_argument('--channels', type=int, default=2,
+    parser.add_argument('--channels', type=int, default=1,
                         help="Number of input audio channels")
     parser.add_argument('--kernel_size', type=int, default=5,
                         help="Filter width of kernels. Has to be an odd number")
