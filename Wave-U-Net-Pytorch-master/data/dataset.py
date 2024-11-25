@@ -1,32 +1,27 @@
 import os
 
 import h5py
-import numpy as np
 from sortedcontainers import SortedList
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import os
+import numpy as np
+import glob
 
-from data.utils import load
+from data.utils import load, write_wav
 
 
 class SeparationDataset(Dataset):
-    def __init__(self, dataset, partition, instruments, sr, channels, shapes, random_hops, hdf_dir, audio_transform=None, in_memory=False):
+    def __init__(self, dataset, partition, instruments, sr, channels, shapes,
+                 random_hops, hdf_dir, audio_transform=None, in_memory=False):
         '''
-        Initialises a source separation dataset
-        :param data: HDF audio data object
-        :param input_size: Number of input samples for each example
-        :param context_front: Number of extra context samples to prepend to input
-        :param context_back: NUmber of extra context samples to append to input
-        :param hop_size: Skip hop_size - 1 sample positions in the audio for each example (subsampling the audio)
-        :param random_hops: If False, sample examples evenly from whole audio signal according to hop_size parameter. If True, randomly sample a position from the audio
+        Initializes a source separation dataset
         '''
-
         super(SeparationDataset, self).__init__()
 
-        self.hdf_dataset = None
+        self.hdf_dataset = None  # Do not open the HDF5 file here
         os.makedirs(hdf_dir, exist_ok=True)
         self.hdf_dir = os.path.join(hdf_dir, partition + ".hdf5")
-
         self.random_hops = random_hops
         self.sr = sr
         self.channels = channels
@@ -39,10 +34,6 @@ class SeparationDataset(Dataset):
 
         # Check if HDF file exists already
         if not os.path.exists(self.hdf_dir):
-            # Create folder if it did not exist before
-            if not os.path.exists(hdf_dir):
-                os.makedirs(hdf_dir)
-
             # Create HDF file
             with h5py.File(self.hdf_dir, "w") as f:
                 f.attrs["sr"] = sr
@@ -50,61 +41,103 @@ class SeparationDataset(Dataset):
                 f.attrs["instruments"] = instruments
 
                 print("Adding audio files to dataset (preprocessing)...")
+                num_examples = len(dataset.get(partition, []))
+                if num_examples == 0:
+                    raise ValueError(f"No data found for partition '{partition}'. Please check your dataset.")
+
                 for idx, example in enumerate(tqdm(dataset[partition])):
                     # Load mix
                     mix_audio, _ = load(example["mix"], sr=self.sr, mono=(self.channels == 1))
 
+                    # Load piano source (the hint)
+                    piano_source_audio, _ = load(example["piano_source"], sr=self.sr, mono=(self.channels == 1))
+
+                    # Load source audios (targets)
                     source_audios = []
                     for source in instruments:
-                        # In this case, read in audio and convert to target sampling rate
                         source_audio, _ = load(example[source], sr=self.sr, mono=(self.channels == 1))
                         source_audios.append(source_audio)
                     source_audios = np.concatenate(source_audios, axis=0)
-                    assert(source_audios.shape[1] == mix_audio.shape[1])
+
+                    # Ensure all audio arrays have the same length
+                    min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
+                    mix_audio = mix_audio[:, :min_length]
+                    piano_source_audio = piano_source_audio[:, :min_length]
+                    source_audios = source_audios[:, :min_length]
 
                     # Add to HDF5 file
                     grp = f.create_group(str(idx))
-                    grp.create_dataset("inputs", shape=mix_audio.shape, dtype=mix_audio.dtype, data=mix_audio)
-                    grp.create_dataset("targets", shape=source_audios.shape, dtype=source_audios.dtype, data=source_audios)
-                    grp.attrs["length"] = mix_audio.shape[1]
-                    grp.attrs["target_length"] = source_audios.shape[1]
+                    # Store inputs: mix and piano_source
+                    inputs_grp = grp.create_group("inputs")
+                    inputs_grp.create_dataset("mix", data=mix_audio)
+                    inputs_grp.create_dataset("piano_source", data=piano_source_audio)
+                    # Store targets
+                    grp.create_dataset("targets", data=source_audios)
+                    grp.attrs["length"] = min_length
+                    grp.attrs["target_length"] = min_length
 
-        # In that case, check whether sr and channels are complying with the audio in the HDF file, otherwise raise error
+        # Check HDF5 file attributes
         with h5py.File(self.hdf_dir, "r") as f:
             if f.attrs["sr"] != sr or \
                     f.attrs["channels"] != channels or \
                     list(f.attrs["instruments"]) != instruments:
                 raise ValueError(
-                    "Tried to load existing HDF file, but sampling rate and channel or instruments are not as expected. Did you load an out-dated HDF file?")
+                    "Tried to load existing HDF file, but sampling rate, channel count, or instruments are not as expected. Did you load an outdated HDF file?")
 
-        # HDF FILE READY
+            # HDF FILE READY
+            # SET SAMPLING POSITIONS
 
-        # SET SAMPLING POSITIONS
+            # Go through HDF and collect lengths of all audio files
+            num_songs = len(f)
+            if num_songs == 0:
+                raise ValueError(f"The HDF5 file '{self.hdf_dir}' is empty. Please check your dataset preparation.")
 
-        # Go through HDF and collect lengths of all audio files
-        with h5py.File(self.hdf_dir, "r") as f:
-            lengths = [f[str(song_idx)].attrs["target_length"] for song_idx in range(len(f))]
+            lengths = []
+            for song_idx in range(num_songs):
+                song_key = str(song_idx)
+                if song_key in f:
+                    target_length = f[song_key].attrs["target_length"]
+                    lengths.append(target_length)
+                else:
+                    print(f"Warning: Song index {song_idx} not found in HDF5 file.")
 
-            # Subtract input_size from lengths and divide by hop size to determine number of starting positions
+            if not lengths:
+                raise ValueError("No valid song lengths found in HDF5 file.")
+
+            # Calculate the number of starting positions
             lengths = [(l // self.shapes["output_frames"]) + 1 for l in lengths]
 
-        self.start_pos = SortedList(np.cumsum(lengths))
-        self.length = self.start_pos[-1]
+        if lengths:
+            self.start_pos = SortedList(np.cumsum(lengths))
+            self.length = self.start_pos[-1]
+        else:
+            self.start_pos = SortedList()
+            self.length = 0
+            print("Warning: No data found in HDF5 file. Dataset length set to 0.")
+
+    def __len__(self):
+        return self.length if hasattr(self, 'length') else 0
 
     def __getitem__(self, index):
-        # Open HDF5
-        if self.hdf_dataset is None:
-            driver = "core" if self.in_memory else None  # Load HDF5 fully into memory if desired
-            self.hdf_dataset = h5py.File(self.hdf_dir, 'r', driver=driver)
+        if self.length == 0:
+            raise IndexError("Cannot get item from an empty dataset.")
 
-        # Find out which slice of targets we want to read
+        # Open HDF5 file in the worker process
+        if self.hdf_dataset is None:
+            self.hdf_dataset = h5py.File(self.hdf_dir, 'r')
+
+        # Determine song key and index within the song
         audio_idx = self.start_pos.bisect_right(index)
         if audio_idx > 0:
             index = index - self.start_pos[audio_idx - 1]
+        song_key = str(audio_idx)
 
         # Check length of audio signal
-        audio_length = self.hdf_dataset[str(audio_idx)].attrs["length"]
-        target_length = self.hdf_dataset[str(audio_idx)].attrs["target_length"]
+        if song_key not in self.hdf_dataset:
+            raise KeyError(f"Song index {audio_idx} not found in HDF5 file.")
+
+        audio_length = self.hdf_dataset[song_key].attrs["length"]
+        target_length = self.hdf_dataset[song_key].attrs["target_length"]
 
         # Determine position where to start targets
         if self.random_hops:
@@ -132,21 +165,112 @@ class SeparationDataset(Dataset):
         else:
             pad_back = 0
 
-        # Read and return
-        audio = self.hdf_dataset[str(audio_idx)]["inputs"][:, start_pos:end_pos].astype(np.float32)
+        # Read mix_audio
+        mix_audio = self.hdf_dataset[song_key]["inputs"]["mix"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            audio = np.pad(audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            mix_audio = np.pad(mix_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        targets = self.hdf_dataset[str(audio_idx)]["targets"][:, start_pos:end_pos].astype(np.float32)
+        # Read piano_source_audio
+        piano_source_audio = self.hdf_dataset[song_key]["inputs"]["piano_source"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            targets = np.pad(targets, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        targets = {inst : targets[idx*self.channels:(idx+1)*self.channels] for idx, inst in enumerate(self.instruments)}
+        # Stack mix_audio and piano_source_audio along the channel dimension
+        audio = np.concatenate((mix_audio, piano_source_audio), axis=0)  # Shape: [channels * 2, samples]
 
-        if hasattr(self, "audio_transform") and self.audio_transform is not None:
+        # Read targets (the true outputs you want the model to predict)
+        targets_data = self.hdf_dataset[song_key]["targets"][:, start_pos:end_pos].astype(np.float32)
+        if pad_front > 0 or pad_back > 0:
+            targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+
+        # Create a dictionary of targets for each instrument
+        targets = {inst: targets_data[idx * self.channels:(idx + 1) * self.channels]
+                   for idx, inst in enumerate(self.instruments)}
+
+        # Apply audio transformations (if any)
+        if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)
 
         return audio, targets
 
-    def __len__(self):
-        return self.length
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Do not pickle the hdf_dataset
+        state['hdf_dataset'] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize hdf_dataset in the worker
+        self.hdf_dataset = None
+
+    def __del__(self):
+        # Ensure the HDF5 file is closed when the dataset is destroyed
+        if self.hdf_dataset is not None:
+            self.hdf_dataset.close()
+
+
+
+def get_dataset(database_path):
+    '''
+    Retrieve audio file paths for your custom dataset
+    :param database_path: Root directory of your dataset
+    :return: list containing train and test samples, each sample containing all audio paths
+    '''
+    subsets = []
+
+    for subset in ["train", "test"]:
+        print("Loading " + subset + " set...")
+        tracks = glob.glob(os.path.join(database_path, subset, "*"))
+        samples = []
+
+        # Go through tracks
+        for track_folder in sorted(tracks):
+            example = {}
+            voice_path = os.path.join(track_folder, "voice.wav")
+            piano_bleed_path = os.path.join(track_folder, "piano_speaker_bleed.wav")
+            piano_source_path = os.path.join(track_folder, "piano_source.wav")  # New line
+            mix_path = os.path.join(track_folder, "mix.wav")
+            acc_path = piano_bleed_path
+
+            # Ensure the stem files exist
+            if not os.path.exists(voice_path):
+                print(f"Voice file not found: {voice_path}")
+                continue
+            if not os.path.exists(piano_bleed_path):
+                print(f"Piano speaker bleed file not found: {piano_bleed_path}")
+                continue
+            if not os.path.exists(piano_source_path):  # New check
+                print(f"Piano source file not found: {piano_source_path}")
+                continue
+
+            example["mix"] = mix_path
+            example["voice"] = voice_path
+            example["piano_speaker_bleed"] = piano_bleed_path
+            example["piano_source"] = piano_source_path  # Add this line
+            example["accompaniment"] = acc_path  # Accompaniment is piano_speaker_bleed
+
+            samples.append(example)
+
+        subsets.append(samples)
+
+    # Return the dataset after processing all subsets
+    return subsets
+
+
+def get_dataset_folds(root_path, version="HQ"):
+    dataset = get_dataset(root_path)
+
+    train_val_list = dataset[0]
+    test_list = dataset[1]
+
+    np.random.seed(1337)  # Ensure that partitioning is always the same on each run
+    train_size = int(len(train_val_list) * 0.8)  # Adjust the percentage as needed
+    if train_size == 0:
+        train_size = 1  # Ensure at least one training sample
+    train_list = np.random.choice(train_val_list, train_size, replace=False)
+    val_list = [elem for elem in train_val_list if elem not in train_list]
+
+    # Uncomment the line below to debug whether partitioning is deterministic
+    # print("First training song: " + str(train_list[0]))
+    return {"train": train_list, "val": val_list, "test": test_list}

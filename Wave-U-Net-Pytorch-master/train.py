@@ -14,8 +14,8 @@ from tqdm import tqdm
 
 import model.utils as model_utils
 import utils
-from data.dataset import SeparationDataset
-from data.musdb import get_musdb_folds
+from data.dataset import SeparationDataset, get_dataset
+from data.dataset import get_dataset_folds
 from data.utils import crop_targets, random_amplify
 from test import evaluate, validate
 from model.waveunet import Waveunet
@@ -27,7 +27,7 @@ def main(args):
     num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
                    [args.features*2**i for i in range(0, args.levels)]
     target_outputs = int(args.output_size * args.sr)
-    model = Waveunet(args.channels, num_features, args.channels, args.instruments, kernel_size=args.kernel_size,
+    model = Waveunet(args.channels * 2, num_features, args.channels, args.instruments, kernel_size=args.kernel_size,
                      target_output_size=target_outputs, depth=args.depth, strides=args.strides,
                      conv_type=args.conv_type, res=args.res, separate=args.separate)
 
@@ -42,16 +42,28 @@ def main(args):
     writer = SummaryWriter(args.log_dir)
 
     ### DATASET
-    musdb = get_musdb_folds(args.dataset_dir)
+    dataset_data = get_dataset_folds(args.dataset_dir)
     # If not data augmentation, at least crop targets to fit model output shape
     crop_func = partial(crop_targets, shapes=model.shapes)
     # Data augmentation function for training
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
-    train_data = SeparationDataset(musdb, "train", args.instruments, args.sr, args.channels, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
-    val_data = SeparationDataset(musdb, "val", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
-    test_data = SeparationDataset(musdb, "test", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
+    train_data = SeparationDataset(dataset_data, "train", args.instruments, args.sr, args.channels, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
+    val_data = SeparationDataset(dataset_data, "val", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
+    test_data = SeparationDataset(dataset_data, "test", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
+
+    # Debugging: Validate the dataset
+    print("Validating training dataset...")
+    try:
+        audio, targets = train_data[0]  # Load the first sample for debugging
+        print(f"Audio shape: {audio.shape}")
+        print(f"Target keys: {list(targets.keys())}")
+        for key, value in targets.items():
+            print(f"Target {key} shape: {value.shape}")
+    except Exception as e:
+        print(f"Error while accessing the dataset: {e}")
+        raise
 
     ##### TRAINING ####
 
@@ -151,7 +163,7 @@ def main(args):
     writer.add_scalar("test_loss", test_loss, state["step"])
 
     # Mir_eval metrics
-    test_metrics = evaluate(args, musdb["test"], model, args.instruments)
+    test_metrics = evaluate(args, dataset_data["test"], model, args.instruments)
 
     # Dump all metrics results into pickle file for later analysis if needed
     with open(os.path.join(args.checkpoint_dir, "results.pkl"), "wb") as f:
