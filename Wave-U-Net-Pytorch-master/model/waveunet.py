@@ -214,6 +214,8 @@ class Waveunet(nn.Module):
         for idx, block in enumerate(module.upsampling_blocks):
             out = block(out, shortcuts[-1 - idx])
 
+        print(out.shape)
+
         # OUTPUT CONV
         out = module.output_conv(out)
 
