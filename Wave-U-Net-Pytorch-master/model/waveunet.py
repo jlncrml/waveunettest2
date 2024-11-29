@@ -214,11 +214,9 @@ class Waveunet(nn.Module):
         for idx, block in enumerate(module.upsampling_blocks):
             out = block(out, shortcuts[-1 - idx])
 
-        # OUTPUT CONV
+        # OUTPUT CONV - Performs channel reduction
         out = module.output_conv(out)
-
-        out = out[:, :1, :]
-
+        
         if not self.training:  # At test time clip predictions to valid amplitude range
             out = out.clamp(min=-1.0, max=1.0)
         return out
