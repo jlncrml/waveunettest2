@@ -238,7 +238,7 @@ if __name__ == '__main__':
                         help="Write an audio summary into Tensorboard logs every X training iterations")
     parser.add_argument('--loss', type=str, default="L1",
                         help="L1 or L2")
-    parser.add_argument('--conv_type', type=str, default="gn",
+    parser.add_argument('--conv_type', type=str, default="normal",
                         help="Type of convolution (normal, BN-normalised, GN-normalised): normal/bn/gn")
     parser.add_argument('--res', type=str, default="fixed",
                         help="Resampling strategy: fixed sinc-based lowpass filtering or learned conv layer: fixed/learned")
