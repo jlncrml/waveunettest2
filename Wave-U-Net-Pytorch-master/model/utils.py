@@ -43,46 +43,26 @@ def load_model(model, optimizer, path, cuda):
 
 
 def compute_loss(model, inputs, targets, criterion, compute_grad=False):
-    '''
-    Computes gradients of model with given inputs and targets and loss function.
-    Optionally backpropagates to compute gradients for weights.
-    Procedure depends on whether we have one model for each source or not
-    :param model: Model to train with
-    :param inputs: Input mixture
-    :param targets: Target sources
-    :param criterion: Loss function to use (L1, L2, ..)
-    :param compute_grad: Whether to compute gradients
-    :return: Model outputs, Average loss over batch
-    '''
-    all_outputs = {}
+    # Forward pass: model should return a dict with keys like "voice" and "piano_speaker_bleed"
+    outputs = model(inputs)
 
-    if model.separate:
-        avg_loss = 0.0
-        num_sources = 0
-        for inst in model.instruments:
-            output = model(inputs, inst)
-            loss = criterion(output[inst], targets[inst])
+    # Compute separate losses for each instrument/source
+    voice_loss = criterion(outputs["voice"], targets["voice"])
+    piano_loss = criterion(outputs["piano_speaker_bleed"], targets["piano_speaker_bleed"])
 
-            if compute_grad:
-                loss.backward()
+    total_loss = voice_loss + piano_loss
 
-            avg_loss += loss.item()
-            num_sources += 1
+    # Optionally backpropagate
+    if compute_grad:
+        total_loss.backward()
 
-            all_outputs[inst] = output[inst].detach().clone()
+    # Prepare outputs dictionary (detach to avoid gradient tracking)
+    all_outputs = {
+        "voice": outputs["voice"].detach().clone(),
+        "piano_speaker_bleed": outputs["piano_speaker_bleed"].detach().clone()
+    }
 
-        avg_loss /= float(num_sources)
-    else:
-        loss = 0
-        all_outputs = model(inputs)
-        for inst in all_outputs.keys():
-            loss += criterion(all_outputs[inst], targets[inst])
-
-        if compute_grad:
-            loss.backward()
-
-        avg_loss = loss.item() / float(len(all_outputs))
-
+    avg_loss = total_loss.item()
     return all_outputs, avg_loss
 
 

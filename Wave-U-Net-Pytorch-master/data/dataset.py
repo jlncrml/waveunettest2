@@ -116,78 +116,66 @@ class SeparationDataset(Dataset):
             print("Warning: No data found in HDF5 file. Dataset length set to 0.")
 
     def __len__(self):
-        return self.length if hasattr(self, 'length') else 0
+        # Limit the dataset size to 10 samples
+        #Warning
+        return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
         if self.length == 0:
             raise IndexError("Cannot get item from an empty dataset.")
 
-        # Open HDF5 file in the worker process
         if self.hdf_dataset is None:
             self.hdf_dataset = h5py.File(self.hdf_dir, 'r')
 
-        # Determine song key and index within the song
         audio_idx = self.start_pos.bisect_right(index)
         if audio_idx > 0:
             index = index - self.start_pos[audio_idx - 1]
         song_key = str(audio_idx)
 
-        # Check length of audio signal
         if song_key not in self.hdf_dataset:
             raise KeyError(f"Song index {audio_idx} not found in HDF5 file.")
 
         audio_length = self.hdf_dataset[song_key].attrs["length"]
         target_length = self.hdf_dataset[song_key].attrs["target_length"]
 
-        # Determine position where to start targets
         if self.random_hops:
             start_target_pos = np.random.randint(0, max(target_length - self.shapes["output_frames"] + 1, 1))
         else:
-            # Map item index to sample position within song
             start_target_pos = index * self.shapes["output_frames"]
 
-        # READ INPUTS
-        # Check front padding
         start_pos = start_target_pos - self.shapes["output_start_frame"]
         if start_pos < 0:
-            # Pad manually since audio signal was too short
             pad_front = abs(start_pos)
             start_pos = 0
         else:
             pad_front = 0
 
-        # Check back padding
         end_pos = start_target_pos - self.shapes["output_start_frame"] + self.shapes["input_frames"]
         if end_pos > audio_length:
-            # Pad manually since audio signal was too short
             pad_back = end_pos - audio_length
             end_pos = audio_length
         else:
             pad_back = 0
 
-        # Read mix_audio
         mix_audio = self.hdf_dataset[song_key]["inputs"]["mix"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
             mix_audio = np.pad(mix_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        # Read piano_source_audio
-        piano_source_audio = self.hdf_dataset[song_key]["inputs"]["piano_source"][:, start_pos:end_pos].astype(np.float32)
+        piano_source_audio = self.hdf_dataset[song_key]["inputs"]["piano_source"][:, start_pos:end_pos].astype(
+            np.float32)
         if pad_front > 0 or pad_back > 0:
-            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant",
+                                        constant_values=0.0)
 
-        # Stack mix_audio and piano_source_audio along the channel dimension
-        audio = np.concatenate((mix_audio, piano_source_audio), axis=0)  # Shape: [channels * 2, samples]
+        audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
 
-        # Read targets (the true outputs you want the model to predict)
         targets_data = self.hdf_dataset[song_key]["targets"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
             targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        # Create a dictionary of targets for each instrument
-        targets = {inst: targets_data[idx * self.channels:(idx + 1) * self.channels]
-                   for idx, inst in enumerate(self.instruments)}
+        # Changed line: Just return targets_data directly, removing the dictionary
+        targets = targets_data
 
-        # Apply audio transformations (if any)
         if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)
 
@@ -264,13 +252,16 @@ def get_dataset_folds(root_path, version="HQ"):
     train_val_list = dataset[0]
     test_list = dataset[1]
 
-    np.random.seed(1337)  # Ensure that partitioning is always the same on each run
-    train_size = int(len(train_val_list) * 0.8)  # Adjust the percentage as needed
+    #Warning
+    # Limit to 10 samples in training/validation and test sets
+    # train_val_list = train_val_list[:10]
+    # test_list = test_list[:10]
+
+    np.random.seed(1337)
+    train_size = int(len(train_val_list) * 0.8)
     if train_size == 0:
-        train_size = 1  # Ensure at least one training sample
+        train_size = 1
     train_list = np.random.choice(train_val_list, train_size, replace=False)
     val_list = [elem for elem in train_val_list if elem not in train_list]
 
-    # Uncomment the line below to debug whether partitioning is deterministic
-    # print("First training song: " + str(train_list[0]))
     return {"train": train_list, "val": val_list, "test": test_list}

@@ -170,33 +170,28 @@ def evaluate(args, dataset, model, instruments):
 
 
 def validate(args, model, criterion, test_data):
-    '''
-    Iterate with a given model over a given test dataset and compute the desired loss
-    :param args: Options dictionary
-    :param model: Pytorch model
-    :param criterion: Loss function to use (similar to Pytorch criterions)
-    :param test_data: Test dataset (Pytorch dataset)
-    :return:
-    '''
-    # PREPARE DATA
-    dataloader = torch.utils.data.DataLoader(test_data,
-                                             batch_size=args.batch_size,
-                                             shuffle=False,
-                                             num_workers=args.num_workers)
+    dataloader = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers
+    )
 
-    # VALIDATE
     model.eval()
-    total_loss = 0.
-    with tqdm(total=len(test_data) // args.batch_size) as pbar, torch.no_grad():
-        for example_num, (x, targets) in enumerate(dataloader):
+    total_loss = 0.0
+    with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
+        for example_num, (x, target) in enumerate(dataloader):
             if args.cuda:
                 x = x.cuda()
-                for k in list(targets.keys()):
-                    targets[k] = targets[k].cuda()
+                target = target.cuda()
 
-            _, avg_loss = model_utils.compute_loss(model, x, targets, criterion)
+            out = model(x)
 
-            total_loss += (1. / float(example_num + 1)) * (avg_loss - total_loss)
+            loss = criterion(out, target)
+            loss_val = loss.item()
+
+            # Online averaging of loss
+            total_loss += (1.0 / (example_num + 1)) * (loss_val - total_loss)
 
             pbar.set_description("Current loss: {:.4f}".format(total_loss))
             pbar.update(1)

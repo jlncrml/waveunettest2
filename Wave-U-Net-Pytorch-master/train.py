@@ -19,17 +19,25 @@ from data.dataset import get_dataset_folds
 from data.utils import crop_targets, random_amplify
 from test import evaluate, validate
 from model.waveunet import Waveunet
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 def main(args):
-    #torch.backends.cudnn.benchmark=True # This makes dilated conv much faster for CuDNN 7.5
-
     # MODEL
-    num_features = [2 * args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
-                   [2 * args.features*2**i for i in range(0, args.levels)]
+    num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
+                   [args.features*2**i for i in range(0, args.levels)]
     target_outputs = int(args.output_size * args.sr)
-    model = Waveunet(args.channels * 2, num_features, args.channels, args.instruments, kernel_size=args.kernel_size,
+
+    # Assume single instrument scenario
+    assert len(args.instruments) == 1
+    instrument = args.instruments[0]
+
+    # Updated Waveunet init (no separate, single instrument)
+    model = Waveunet(args.channels * 2, num_features, args.channels,
+                     kernel_size=args.kernel_size,
                      target_output_size=target_outputs, depth=args.depth, strides=args.strides,
-                     conv_type=args.conv_type, res=args.res, separate=args.separate)
+                     conv_type=args.conv_type, res=args.res)
 
     if args.cuda:
         model = model_utils.DataParallel(model)
@@ -41,33 +49,28 @@ def main(args):
 
     writer = SummaryWriter(args.log_dir)
 
-    ### DATASET
+    # DATASET
     dataset_data = get_dataset_folds(args.dataset_dir)
-    # If not data augmentation, at least crop targets to fit model output shape
     crop_func = partial(crop_targets, shapes=model.shapes)
-    # Data augmentation function for training
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
-    train_data = SeparationDataset(dataset_data, "train", args.instruments, args.sr, args.channels, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
-    val_data = SeparationDataset(dataset_data, "val", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
-    test_data = SeparationDataset(dataset_data, "test", args.instruments, args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
+
+    train_data = SeparationDataset(dataset_data, "train", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=augment_func)
+    val_data = SeparationDataset(dataset_data, "val", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
+    test_data = SeparationDataset(dataset_data, "test", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
-    # Debugging: Validate the dataset
+    # Validate dataset
     print("Validating training dataset...")
     try:
-        audio, targets = train_data[0]  # Load the first sample for debugging
+        audio, targets = train_data[0]
         print(f"Audio shape: {audio.shape}")
-        print(f"Target keys: {list(targets.keys())}")
-        for key, value in targets.items():
-            print(f"Target {key} shape: {value.shape}")
+        print(f"Target shape: {targets.shape}")
     except Exception as e:
         print(f"Error while accessing the dataset: {e}")
         raise
 
-    ##### TRAINING ####
-
-    # Set up the loss function
+    # LOSS
     if args.loss == "L1":
         criterion = nn.L1Loss()
     elif args.loss == "L2":
@@ -75,18 +78,13 @@ def main(args):
     else:
         raise NotImplementedError("Couldn't find this loss!")
 
-    # Set up optimiser
+    # OPTIMIZER
     optimizer = Adam(params=model.parameters(), lr=args.lr)
 
-    # Set up training state dict that will also be saved into checkpoints
-    state = {"step" : 0,
-             "worse_epochs" : 0,
-             "epochs" : 0,
-             "best_loss" : np.Inf}
+    state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
-    # LOAD MODEL CHECKPOINT IF DESIRED
     if args.load_model is not None:
-        print("Continuing training full model from checkpoint " + str(args.load_model))
+        print("Continuing training model from checkpoint " + str(args.load_model))
         state = model_utils.load_model(model, optimizer, args.load_model, args.cuda)
 
     print('TRAINING START')
@@ -99,35 +97,53 @@ def main(args):
             for example_num, (x, targets) in enumerate(dataloader):
                 if args.cuda:
                     x = x.cuda()
-                    for k in list(targets.keys()):
-                        targets[k] = targets[k].cuda()
+                    targets = targets.cuda()
 
                 t = time.time()
 
-                # Set LR for this iteration
-                utils.set_cyclic_lr(optimizer, example_num, len(train_data) // args.batch_size, args.cycles, args.min_lr, args.lr)
+                # Set cyclic learning rate
+                utils.set_cyclic_lr(
+                    optimizer,
+                    example_num,
+                    len(train_data) // args.batch_size,
+                    args.cycles,
+                    args.min_lr,
+                    args.lr
+                )
                 writer.add_scalar("lr", utils.get_lr(optimizer), state["step"])
 
-                # Compute loss for each instrument/model
+                # Zero gradients
                 optimizer.zero_grad()
-                outputs, avg_loss = model_utils.compute_loss(model, x, targets, criterion, compute_grad=True)
 
+                # Forward pass
+                out = model(x)
+
+                # Compute loss
+                loss = criterion(out, targets)
+
+                # Backward pass and optimization
+                loss.backward()
                 optimizer.step()
 
+                # Record loss
+                avg_loss = loss.item()
                 state["step"] += 1
 
+                # Timing
                 t = time.time() - t
-                avg_time += (1. / float(example_num + 1)) * (t - avg_time)
+                avg_time += (1.0 / (example_num + 1)) * (t - avg_time)
 
                 writer.add_scalar("train_loss", avg_loss, state["step"])
 
+                # Audio logging
                 if example_num % args.example_freq == 0:
-                    input_centre = torch.mean(x[0, :, model.shapes["output_start_frame"]:model.shapes["output_end_frame"]], 0) # Stereo not supported for logs yet
-                    writer.add_audio("input", input_centre, state["step"], sample_rate=args.sr)
-
-                    for inst in outputs.keys():
-                        writer.add_audio(inst + "_pred", torch.mean(outputs[inst][0], 0), state["step"], sample_rate=args.sr)
-                        writer.add_audio(inst + "_target", torch.mean(targets[inst][0], 0), state["step"], sample_rate=args.sr)
+                    input_centre = torch.mean(
+                        x[0, :, model.shapes["output_start_frame"]:model.shapes["output_end_frame"]],
+                        dim=0
+                    )
+                    writer.add_audio("input", input_centre.cpu(), state["step"], sample_rate=args.sr)
+                    writer.add_audio("pred", torch.mean(out[0].cpu(), dim=0), state["step"], sample_rate=args.sr)
+                    writer.add_audio("target", torch.mean(targets[0].cpu(), dim=0), state["step"], sample_rate=args.sr)
 
                 pbar.update(1)
 
@@ -136,7 +152,6 @@ def main(args):
         print("VALIDATION FINISHED: LOSS: " + str(val_loss))
         writer.add_scalar("val_loss", val_loss, state["step"])
 
-        # EARLY STOPPING CHECK
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
         if val_loss >= state["best_loss"]:
             state["worse_epochs"] += 1
@@ -147,44 +162,37 @@ def main(args):
             state["best_checkpoint"] = checkpoint_path
 
         state["epochs"] += 1
-        # CHECKPOINT
         print("Saving model...")
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
-
-    #### TESTING ####
-    # Test loss
+    # TESTING
     print("TESTING")
-
-    # Load best model based on validation loss
     state = model_utils.load_model(model, None, state["best_checkpoint"], args.cuda)
     test_loss = validate(args, model, criterion, test_data)
     print("TEST FINISHED: LOSS: " + str(test_loss))
     writer.add_scalar("test_loss", test_loss, state["step"])
 
-    # Mir_eval metrics
-    test_metrics = evaluate(args, dataset_data["test"], model, args.instruments)
+    # Evaluate metrics for single instrument
+    test_metrics = evaluate(args, dataset_data["test"], model, [instrument])
 
-    # Dump all metrics results into pickle file for later analysis if needed
+    # Save metrics
     with open(os.path.join(args.checkpoint_dir, "results.pkl"), "wb") as f:
         pickle.dump(test_metrics, f)
 
-    # Write most important metrics into Tensorboard log
-    avg_SDRs = {inst : np.mean([np.nanmean(song[inst]["SDR"]) for song in test_metrics]) for inst in args.instruments}
-    avg_SIRs = {inst : np.mean([np.nanmean(song[inst]["SIR"]) for song in test_metrics]) for inst in args.instruments}
-    for inst in args.instruments:
-        writer.add_scalar("test_SDR_" + inst, avg_SDRs[inst], state["step"])
-        writer.add_scalar("test_SIR_" + inst, avg_SIRs[inst], state["step"])
-    overall_SDR = np.mean([v for v in avg_SDRs.values()])
-    writer.add_scalar("test_SDR", overall_SDR)
-    print("SDR: " + str(overall_SDR))
+    # Log SDR, SIR
+    avg_SDR = np.mean([np.nanmean(song[instrument]["SDR"]) for song in test_metrics])
+    avg_SIR = np.mean([np.nanmean(song[instrument]["SIR"]) for song in test_metrics])
+    writer.add_scalar("test_SDR_" + instrument, avg_SDR, state["step"])
+    writer.add_scalar("test_SIR_" + instrument, avg_SIR, state["step"])
+    writer.add_scalar("test_SDR", avg_SDR, state["step"])
+    print("SDR: " + str(avg_SDR))
 
     writer.close()
 
 if __name__ == '__main__':
     ## TRAIN PARAMETERS
     parser = argparse.ArgumentParser()
-    parser.add_argument('--instruments', type=str, nargs='+', default=["voice", "piano_speaker_bleed"],
+    parser.add_argument('--instruments', type=str, nargs='+', default=["voice"],
                         help="List of instruments to separate (default: \"bass drums other vocals\")")
     parser.add_argument('--cuda', action='store_true',
                         help='Use CUDA (default: False)')
@@ -208,7 +216,7 @@ if __name__ == '__main__':
                         help='Minimum learning rate in LR cycle (default: 5e-5)')
     parser.add_argument('--cycles', type=int, default=2,
                         help='Number of LR cycles per epoch')
-    parser.add_argument('--batch_size', type=int, default=4,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help="Batch size")
     parser.add_argument('--levels', type=int, default=6,
                         help="Number of DS/US blocks")
@@ -230,7 +238,7 @@ if __name__ == '__main__':
                         help="Write an audio summary into Tensorboard logs every X training iterations")
     parser.add_argument('--loss', type=str, default="L1",
                         help="L1 or L2")
-    parser.add_argument('--conv_type', type=str, default="gn",
+    parser.add_argument('--conv_type', type=str, default="bn",
                         help="Type of convolution (normal, BN-normalised, GN-normalised): normal/bn/gn")
     parser.add_argument('--res', type=str, default="fixed",
                         help="Resampling strategy: fixed sinc-based lowpass filtering or learned conv layer: fixed/learned")
