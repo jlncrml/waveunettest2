@@ -77,7 +77,7 @@ def main(args):
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
     criterion = nn.L1Loss() # LOSS
-    filtered_loss = LowPassMSELoss(12000, 48000)
+    filtered_criterion = LowPassMSELoss(12000, 48000)
 
     optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
@@ -140,7 +140,7 @@ def main(args):
                 pbar.update(1)
 
 
-        val_loss = validate(args, model, criterion, val_data) # VALIDATE
+        val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
         print("VALIDATION FINISHED: LOSS: " + str(val_loss))
         writer.add_scalar("val_loss", val_loss, state["step"])
 
