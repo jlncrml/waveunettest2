@@ -275,7 +275,7 @@ if __name__ == '__main__':
                         help="Number of DS/US blocks")
     parser.add_argument('--depth', type=int, default=1,
                         help="Number of convs per block")
-    parser.add_argument('--sr', type=int, default=48000,
+    parser.add_argument('--sr', type=int, default=24000,
                         help="Sampling rate")
     parser.add_argument('--channels', type=int, default=1,
                         help="Number of input audio channels")
