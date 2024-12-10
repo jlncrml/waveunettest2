@@ -2,84 +2,84 @@ import argparse
 import os
 import time
 from functools import partial
-
 import torch
 import pickle
 import numpy as np
-
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import Adam
 from tqdm import tqdm
-
 import model.utils as model_utils
 import utils
 from data.dataset import SeparationDataset, get_dataset
 from data.dataset import get_dataset_folds
 from data.utils import crop_targets, random_amplify
-from test import evaluate, validate
 from model.waveunet import Waveunet
 import logging
+from predict import predict_song
 
 logging.basicConfig(level=logging.DEBUG)
 
+from scipy.signal import butter, lfilter
+import torch
+import torch.nn as nn
+
+class LowPassMSELoss(nn.Module):
+    def __init__(self, cutoff_freq, sample_rate, filter_order=6):
+        super(LowPassMSELoss, self).__init__()
+        self.cutoff_freq = cutoff_freq
+        self.sample_rate = sample_rate
+        self.filter_order = filter_order
+        self.mse_loss = nn.MSELoss()
+
+        nyquist = 0.5 * sample_rate # Design the low-pass Butterworth filter
+        self.b, self.a = butter(filter_order, cutoff_freq / nyquist, btype='low', analog=False)
+
+    def forward(self, output, target):
+        assert output.shape == target.shape, "Output and target must have the same shape."
+        filtered_output = self.low_pass_filter(output) # Apply low-pass filter to both output and target
+        filtered_target = self.low_pass_filter(target)
+        loss = self.mse_loss(filtered_output, filtered_target) # Compute MSE loss on filtered signals
+        return loss
+
+    def low_pass_filter(self, signal):
+        signal_np = signal.cpu().detach().numpy() # Convert to NumPy array for filtering
+        filtered_signal = lfilter(self.b, self.a, signal_np, axis=-1) # Apply the filter along the time axis
+        return torch.from_numpy(filtered_signal).to(signal.device) # Convert back to torch.Tensor
+
+
 def main(args):
-    # MODEL
-    num_features = [2 * args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
-                   [2 * args.features*2**i for i in range(0, args.levels)]
+    num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
+                   [args.features*2**i for i in range(0, args.levels)]
     target_outputs = int(args.output_size * args.sr)
 
-    # Assume single instrument scenario
-    assert len(args.instruments) == 1
     instrument = args.instruments[0]
 
-    # Updated Waveunet init (no separate, single instrument)
     model = Waveunet(args.channels * 2, num_features, args.channels,
                      kernel_size=args.kernel_size,
-                     target_output_size=target_outputs, depth=args.depth, strides=args.strides,
-                     conv_type=args.conv_type, res=args.res)
+                     target_output_size=target_outputs, depth=args.depth, strides=args.strides) # Updated Waveunet init (no separate, single instrument)
 
     if args.cuda:
         model = model_utils.DataParallel(model)
         print("move model to gpu")
         model.cuda()
 
-    print('model: ', model)
-    print('parameter count: ', str(sum(p.numel() for p in model.parameters())))
-
     writer = SummaryWriter(args.log_dir)
 
-    # DATASET
-    dataset_data = get_dataset_folds(args.dataset_dir)
+    dataset_data = get_dataset_folds(args.dataset_dir) # DATASET
     crop_func = partial(crop_targets, shapes=model.shapes)
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
-    train_data = SeparationDataset(dataset_data, "train", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=augment_func)
+    train_data = SeparationDataset(dataset_data, "train", [instrument], args.sr, args.channels, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
     val_data = SeparationDataset(dataset_data, "val", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
     test_data = SeparationDataset(dataset_data, "test", [instrument], args.sr, args.channels, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
-    # Validate dataset
-    print("Validating training dataset...")
-    try:
-        audio, targets = train_data[0]
-        print(f"Audio shape: {audio.shape}")
-        print(f"Target shape: {targets.shape}")
-    except Exception as e:
-        print(f"Error while accessing the dataset: {e}")
-        raise
+    criterion = nn.L1Loss() # LOSS
+    filtered_loss = LowPassMSELoss(12000, 48000)
 
-    # LOSS
-    if args.loss == "L1":
-        criterion = nn.L1Loss()
-    elif args.loss == "L2":
-        criterion = nn.MSELoss()
-    else:
-        raise NotImplementedError("Couldn't find this loss!")
-
-    # OPTIMIZER
-    optimizer = Adam(params=model.parameters(), lr=args.lr)
+    optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
@@ -101,7 +101,6 @@ def main(args):
 
                 t = time.time()
 
-                # Set cyclic learning rate
                 utils.set_cyclic_lr(
                     optimizer,
                     example_num,
@@ -112,31 +111,24 @@ def main(args):
                 )
                 writer.add_scalar("lr", utils.get_lr(optimizer), state["step"])
 
-                # Zero gradients
-                optimizer.zero_grad()
+                optimizer.zero_grad() # Zero gradients
 
-                # Forward pass
-                out = model(x)
+                out = model(x) # Forward pass
 
-                # Compute loss
-                loss = criterion(out, targets)
+                loss = criterion(out, targets) # Compute loss
 
-                # Backward pass and optimization
-                loss.backward()
+                loss.backward()  # Backward pass and optimization
                 optimizer.step()
 
-                # Record loss
-                avg_loss = loss.item()
+                avg_loss = loss.item() # Record loss
                 state["step"] += 1
 
-                # Timing
-                t = time.time() - t
+                t = time.time() - t # Timing
                 avg_time += (1.0 / (example_num + 1)) * (t - avg_time)
 
                 writer.add_scalar("train_loss", avg_loss, state["step"])
 
-                # Audio logging
-                if example_num % args.example_freq == 0:
+                if example_num % args.example_freq == 0:  # Audio logging
                     input_centre = torch.mean(
                         x[0, :, model.shapes["output_start_frame"]:model.shapes["output_end_frame"]],
                         dim=0
@@ -147,8 +139,8 @@ def main(args):
 
                 pbar.update(1)
 
-        # VALIDATE
-        val_loss = validate(args, model, criterion, val_data)
+
+        val_loss = validate(args, model, criterion, val_data) # VALIDATE
         print("VALIDATION FINISHED: LOSS: " + str(val_loss))
         writer.add_scalar("val_loss", val_loss, state["step"])
 
@@ -165,8 +157,8 @@ def main(args):
         print("Saving model...")
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
-    # TESTING
-    print("TESTING")
+
+    print("TESTING") # TESTING
     state = model_utils.load_model(model, None, state["best_checkpoint"], args.cuda)
     test_loss = validate(args, model, criterion, test_data)
     print("TEST FINISHED: LOSS: " + str(test_loss))
@@ -188,6 +180,67 @@ def main(args):
     print("SDR: " + str(avg_SDR))
 
     writer.close()
+
+
+def evaluate(args, dataset, model, instruments):
+    perfs = list()
+    model.eval()
+    with torch.no_grad():
+        for example in dataset:
+            print("Evaluating " + example["mix"])
+
+            # Load source references in their original sr and channel number
+            target_sources = np.stack([data.utils.load(example[instrument], sr=None, mono=False)[0].T for instrument in instruments])
+
+            # Predict using mixture
+            pred_sources = predict_song(args, example["mix"], model)
+            pred_sources = np.stack([pred_sources[key].T for key in instruments])
+
+            # Evaluate
+            SDR, ISR, SIR, SAR, _ = museval.metrics.bss_eval(target_sources, pred_sources)
+            song = {}
+            for idx, name in enumerate(instruments):
+                song[name] = {"SDR" : SDR[idx], "ISR" : ISR[idx], "SIR" : SIR[idx], "SAR" : SAR[idx]}
+            perfs.append(song)
+
+    return perfs
+
+
+def validate(args, model, criterion1, criterion2, test_data):
+    dataloader = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers
+    )
+
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
+        for example_num, (x, target) in enumerate(dataloader):
+            if args.cuda:
+                x = x.cuda()
+                target = target.cuda()
+
+            out = model(x)
+
+            loss1 = criterion1(out, target)
+            loss1_val = loss1.item()
+
+            loss2 = criterion2(out, target)
+            loss2_val = loss2.item()
+
+            # Online averaging of the first loss
+            total_loss += (1.0 / (example_num + 1)) * (loss1_val - total_loss)
+
+            # Update progress bar with both losses
+            pbar.set_description(
+                f"Loss1: {total_loss:.4f}, Loss2: {loss2_val:.4f}"
+            )
+
+            pbar.update(1)
+
+    return total_loss
 
 if __name__ == '__main__':
     ## TRAIN PARAMETERS

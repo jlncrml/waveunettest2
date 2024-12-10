@@ -38,17 +38,3 @@ def load(path, sr=22050, mono=True, mode="numpy", offset=0.0, duration=None):
 
 def write_wav(path, audio, sr):
     soundfile.write(path, audio.T, sr, "PCM_16")
-
-
-def resample(audio, orig_sr, new_sr, mode="numpy"):
-    if orig_sr == new_sr:
-        return audio
-
-    if isinstance(audio, torch.Tensor):
-        audio = audio.detach().cpu().numpy()
-
-    out = librosa.resample(audio, orig_sr, new_sr, res_type='kaiser_fast')
-
-    if mode == "pytorch":
-        out = torch.tensor(out)
-    return out

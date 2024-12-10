@@ -198,7 +198,6 @@ class SeparationDataset(Dataset):
             self.hdf_dataset.close()
 
 
-
 def get_dataset(database_path):
     '''
     Retrieve audio file paths for your custom dataset
@@ -211,7 +210,7 @@ def get_dataset(database_path):
         print("Loading " + subset + " set...")
         tracks = glob.glob(os.path.join(database_path, subset, "*"))
         samples = []
-
+        
         # Go through tracks
         for track_folder in sorted(tracks):
             example = {}
@@ -258,9 +257,12 @@ def get_dataset_folds(root_path, version="HQ"):
     # test_list = test_list[:10]
 
     np.random.seed(1337)
+
     train_size = int(len(train_val_list) * 0.8)
+
     if train_size == 0:
         train_size = 1
+
     train_list = np.random.choice(train_val_list, train_size, replace=False)
     val_list = [elem for elem in train_val_list if elem not in train_list]
 
