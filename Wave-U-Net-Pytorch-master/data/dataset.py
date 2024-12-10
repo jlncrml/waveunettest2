@@ -22,7 +22,7 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
 class SeparationDataset(Dataset):
     def __init__(self, dataset, partition, instruments, sr, channels, shapes,
                  random_hops, hdf_dir, audio_transform=None, in_memory=False,
-                 cutoff_freq=12000, filter_order=6):
+                 cutoff_freq=10000, filter_order=6):
         super(SeparationDataset, self).__init__()
         self.hdf_dataset = None
         os.makedirs(hdf_dir, exist_ok=True)
@@ -182,6 +182,9 @@ class SeparationDataset(Dataset):
         # audio and targets are [channels, frames], so filter along the last axis
         audio = butter_lowpass_filter(audio, self.cutoff_freq, self.sr, order=self.filter_order)
         targets_data = butter_lowpass_filter(targets_data, self.cutoff_freq, self.sr, order=self.filter_order)
+
+        audio = audio[:, ::2]
+        targets_data = targets_data[:, ::2]
 
         targets = targets_data
 
