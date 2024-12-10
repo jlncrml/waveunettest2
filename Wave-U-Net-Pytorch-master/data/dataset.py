@@ -1,6 +1,7 @@
 import os
 
 import h5py
+from scipy.signal import butter, lfilter
 from sortedcontainers import SortedList
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -11,15 +12,19 @@ import glob
 from data.utils import load, write_wav
 
 
+def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
+    nyquist = 0.5 * sr
+    b, a = butter(order, cutoff_freq / nyquist, btype='low', analog=False)
+    filtered = lfilter(b, a, data, axis=-1)
+    filtered = filtered.astype(np.float32)
+    return filtered
+
 class SeparationDataset(Dataset):
     def __init__(self, dataset, partition, instruments, sr, channels, shapes,
-                 random_hops, hdf_dir, audio_transform=None, in_memory=False):
-        '''
-        Initializes a source separation dataset
-        '''
+                 random_hops, hdf_dir, audio_transform=None, in_memory=False,
+                 cutoff_freq=12000, filter_order=6):
         super(SeparationDataset, self).__init__()
-
-        self.hdf_dataset = None  # Do not open the HDF5 file here
+        self.hdf_dataset = None
         os.makedirs(hdf_dir, exist_ok=True)
         self.hdf_dir = os.path.join(hdf_dir, partition + ".hdf5")
         self.random_hops = random_hops
@@ -29,6 +34,8 @@ class SeparationDataset(Dataset):
         self.audio_transform = audio_transform
         self.in_memory = in_memory
         self.instruments = instruments
+        self.cutoff_freq = cutoff_freq
+        self.filter_order = filter_order
 
         # PREPARE HDF FILE
 
@@ -161,11 +168,9 @@ class SeparationDataset(Dataset):
         if pad_front > 0 or pad_back > 0:
             mix_audio = np.pad(mix_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        piano_source_audio = self.hdf_dataset[song_key]["inputs"]["piano_source"][:, start_pos:end_pos].astype(
-            np.float32)
+        piano_source_audio = self.hdf_dataset[song_key]["inputs"]["piano_source"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant",
-                                        constant_values=0.0)
+            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
         audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
 
@@ -173,7 +178,11 @@ class SeparationDataset(Dataset):
         if pad_front > 0 or pad_back > 0:
             targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        # Changed line: Just return targets_data directly, removing the dictionary
+        # Apply low-pass filter to both audio and targets
+        # audio and targets are [channels, frames], so filter along the last axis
+        audio = butter_lowpass_filter(audio, self.cutoff_freq, self.sr, order=self.filter_order)
+        targets_data = butter_lowpass_filter(targets_data, self.cutoff_freq, self.sr, order=self.filter_order)
+
         targets = targets_data
 
         if self.audio_transform is not None:
