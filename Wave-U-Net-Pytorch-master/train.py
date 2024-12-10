@@ -235,7 +235,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 
             # Update progress bar with both losses
             pbar.set_description(
-                f"Loss1: {total_loss:.4f}, Loss2: {loss2_val:.4f}"
+                f"MSE: {total_loss:.5f}, Filtered MSE: {loss2_val:.5f}"
             )
 
             pbar.update(1)
