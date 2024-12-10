@@ -23,7 +23,7 @@ def crop_targets(mix, targets, shapes):
     return mix, targets
 
 
-def load(path, sr=22050, mono=True, mode="numpy", offset=0.0, duration=None):
+def load(path, sr=48000, mono=True, mode="numpy", offset=0.0, duration=None):
     y, curr_sr = librosa.load(path, sr=sr, mono=mono, res_type='kaiser_fast', offset=offset, duration=duration)
 
     if len(y.shape) == 1:

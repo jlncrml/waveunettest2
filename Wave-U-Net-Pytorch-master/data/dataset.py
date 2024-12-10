@@ -54,15 +54,15 @@ class SeparationDataset(Dataset):
 
                 for idx, example in enumerate(tqdm(dataset[partition])):
                     # Load mix
-                    mix_audio, _ = load(example["mix"], sr=self.sr, mono=(self.channels == 1))
+                    mix_audio, _ = load(example["mix"], mono=(self.channels == 1))
 
                     # Load piano source (the hint)
-                    piano_source_audio, _ = load(example["piano_source"], sr=self.sr, mono=(self.channels == 1))
+                    piano_source_audio, _ = load(example["piano_source"], mono=(self.channels == 1))
 
                     # Load source audios (targets)
                     source_audios = []
                     for source in instruments:
-                        source_audio, _ = load(example[source], sr=self.sr, mono=(self.channels == 1))
+                        source_audio, _ = load(example[source], mono=(self.channels == 1))
                         source_audios.append(source_audio)
                     source_audios = np.concatenate(source_audios, axis=0)
 
