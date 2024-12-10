@@ -24,13 +24,13 @@ from scipy.signal import butter, lfilter
 import torch
 import torch.nn as nn
 
-class LowPassMSELoss(nn.Module):
+class LowPassMAELoss(nn.Module):
     def __init__(self, cutoff_freq, sample_rate, filter_order=6):
-        super(LowPassMSELoss, self).__init__()
+        super(LowPassMAELoss, self).__init__()
         self.cutoff_freq = cutoff_freq
         self.sample_rate = sample_rate
         self.filter_order = filter_order
-        self.mse_loss = nn.MSELoss()
+        self.mae_loss = nn.L1Loss()
 
         nyquist = 0.5 * sample_rate # Design the low-pass Butterworth filter
         self.b, self.a = butter(filter_order, cutoff_freq / nyquist, btype='low', analog=False)
@@ -39,7 +39,7 @@ class LowPassMSELoss(nn.Module):
         assert output.shape == target.shape, "Output and target must have the same shape."
         filtered_output = self.low_pass_filter(output) # Apply low-pass filter to both output and target
         filtered_target = self.low_pass_filter(target)
-        loss = self.mse_loss(filtered_output, filtered_target) # Compute MSE loss on filtered signals
+        loss = self.mae_loss(filtered_output, filtered_target) # Compute MAE loss on filtered signals
         return loss
 
     def low_pass_filter(self, signal):
@@ -77,7 +77,7 @@ def main(args):
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
     criterion = nn.L1Loss() # LOSS
-    filtered_criterion = LowPassMSELoss(12000, 48000)
+    filtered_criterion = LowPassMAELoss(12000, 48000)
 
     optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
@@ -109,6 +109,7 @@ def main(args):
                     args.min_lr,
                     args.lr
                 )
+
                 writer.add_scalar("lr", utils.get_lr(optimizer), state["step"])
 
                 optimizer.zero_grad() # Zero gradients
@@ -230,17 +231,16 @@ def validate(args, model, criterion1, criterion2, test_data):
             loss2 = criterion2(out, target)
             loss2_val = loss2.item()
 
-            # Online averaging of the first loss
-            total_loss += (1.0 / (example_num + 1)) * (loss1_val - total_loss)
+            total_loss += (1.0 / (example_num + 1)) * (loss1_val - total_loss) # Online averaging of the first loss
 
-            # Update progress bar with both losses
-            pbar.set_description(
+            pbar.set_description( # Update progress bar with both losses
                 f"MSE: {total_loss:.5f}, Filtered MSE: {loss2_val:.5f}"
             )
 
             pbar.update(1)
 
     return total_loss
+
 
 if __name__ == '__main__':
     ## TRAIN PARAMETERS
