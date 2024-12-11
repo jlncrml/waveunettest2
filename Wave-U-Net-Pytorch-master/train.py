@@ -76,6 +76,14 @@ def main(args):
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
+    # Inspect the first few samples directly
+    for i in range(5):  # Adjust the range as needed
+        try:
+            audio, targets = train_data[i]
+            print(f"Sample {i}: audio shape {audio.shape}, targets shape {targets.shape}")
+        except Exception as e:
+            print(f"Error with sample {i}: {e}")
+
     criterion = nn.L1Loss() # LOSS
     filtered_criterion = LowPassMAELoss(12000, 48000)
 

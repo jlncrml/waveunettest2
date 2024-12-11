@@ -66,7 +66,16 @@ class SeparationDataset(Dataset):
                         source_audios.append(source_audio)
                     source_audios = np.concatenate(source_audios, axis=0)
 
-                    # Ensure all audio arrays have the same length
+                    # Apply low-pass filter here in the initializer
+                    mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr, order=self.filter_order)
+                    piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr, order=self.filter_order)
+                    source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr, order=self.filter_order)
+
+                    if self.sr == 24000:
+                        mix_audio = mix_audio[:, ::2]
+                        piano_source_audio = piano_source_audio[:, ::2]
+                        source_audios = source_audios[:, ::2]
+
                     min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
                     mix_audio = mix_audio[:, :min_length]
                     piano_source_audio = piano_source_audio[:, :min_length]
@@ -111,6 +120,8 @@ class SeparationDataset(Dataset):
             if not lengths:
                 raise ValueError("No valid song lengths found in HDF5 file.")
 
+            print(shapes)
+
             # Calculate the number of starting positions
             lengths = [(l // self.shapes["output_frames"]) + 1 for l in lengths]
 
@@ -124,7 +135,6 @@ class SeparationDataset(Dataset):
 
     def __len__(self):
         # Limit the dataset size to 10 samples
-        #Warning
         return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
@@ -177,14 +187,6 @@ class SeparationDataset(Dataset):
         targets_data = self.hdf_dataset[song_key]["targets"][:, start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
             targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
-
-        # Apply low-pass filter to both audio and targets
-        # audio and targets are [channels, frames], so filter along the last axis
-        audio = butter_lowpass_filter(audio, self.cutoff_freq, self.sr, order=self.filter_order)
-        targets_data = butter_lowpass_filter(targets_data, self.cutoff_freq, self.sr, order=self.filter_order)
-
-        audio = audio[:, ::2]
-        targets_data = targets_data[:, ::2]
 
         targets = targets_data
 
