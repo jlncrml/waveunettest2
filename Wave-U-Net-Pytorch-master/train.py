@@ -307,7 +307,7 @@ if __name__ == '__main__':
                         help="Number of input audio channels")
     parser.add_argument('--kernel_size', type=int, default=5,
                         help="Filter width of kernels. Has to be an odd number")
-    parser.add_argument('--output_size', type=float, default=2.0,
+    parser.add_argument('--output_size', type=float, default=3.00,
                         help="Output duration")
     parser.add_argument('--strides', type=int, default=4,
                         help="Strides in Waveunet")
