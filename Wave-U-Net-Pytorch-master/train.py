@@ -49,7 +49,7 @@ class LowPassMAELoss(nn.Module):
 
 
 class LastSamplesMAELoss(nn.Module):
-    def __init__(self, n_samples=4096):
+    def __init__(self, n_samples=2048):
         super(LastSamplesMAELoss, self).__init__()
         self.n_samples = n_samples
         self.mae_loss = nn.L1Loss()
