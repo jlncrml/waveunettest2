@@ -48,6 +48,24 @@ class LowPassMAELoss(nn.Module):
         return torch.from_numpy(filtered_signal).to(signal.device) # Convert back to torch.Tensor
 
 
+class LastSamplesMAELoss(nn.Module):
+    def __init__(self, n_samples=4096):
+        super(LastSamplesMAELoss, self).__init__()
+        self.n_samples = n_samples
+        self.mae_loss = nn.L1Loss()
+
+    def forward(self, output, target):
+        assert output.shape == target.shape, "Output and target must have the same shape."
+
+        # Extract the last n_samples from each signal
+        last_out = output[..., -self.n_samples:]
+        last_tgt = target[..., -self.n_samples:]
+
+        # Compute MAE on the last samples
+        loss = self.mae_loss(last_out, last_tgt)
+        return loss
+
+
 def main(args):
     num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
                    [args.features*2**i for i in range(0, args.levels)]
@@ -85,7 +103,7 @@ def main(args):
             print(f"Error with sample {i}: {e}")
 
     criterion = nn.L1Loss() # LOSS
-    filtered_criterion = LowPassMAELoss(12000, 48000)
+    filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
@@ -242,7 +260,7 @@ def validate(args, model, criterion1, criterion2, test_data):
             total_loss += (1.0 / (example_num + 1)) * (loss1_val - total_loss) # Online averaging of the first loss
 
             pbar.set_description( # Update progress bar with both losses
-                f"MSE: {total_loss:.5f}, Filtered MSE: {loss2_val:.5f}"
+                f"MAE: {total_loss:.5f}, Last MAE: {loss2_val:.5f} -----------------------------------------------"
             )
 
             pbar.update(1)
