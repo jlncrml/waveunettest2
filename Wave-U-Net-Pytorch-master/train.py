@@ -173,8 +173,8 @@ def main(args):
                 pbar.update(1)
 
 
-        val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
-        print("VALIDATION FINISHED: LOSS: " + str(val_loss))
+        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
+        print("VALIDATION FINISHED: LOSS: " + str(val_loss) + "LAST 2048 LOSS: " + str(last_val_loss))
         writer.add_scalar("val_loss", val_loss, state["step"])
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
@@ -250,10 +250,8 @@ def validate(args, model, criterion1, criterion2, test_data):
     model.eval()
     total_loss1 = 0.0
     total_loss2 = 0.0
-    count = 0
-
-    with torch.no_grad():
-        for x, target in dataloader:
+    with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
+        for example_num, (x, target) in enumerate(dataloader):
             if args.cuda:
                 x = x.cuda()
                 target = target.cuda()
@@ -261,20 +259,23 @@ def validate(args, model, criterion1, criterion2, test_data):
             out = model(x)
 
             loss1 = criterion1(out, target)
-            loss2 = criterion2(out, target)
-
             loss1_val = loss1.item()
+
+            loss2 = criterion2(out, target)
             loss2_val = loss2.item()
 
-            count += 1
             # Online averaging for both losses
+            count = example_num + 1
             total_loss1 += (1.0 / count) * (loss1_val - total_loss1)
             total_loss2 += (1.0 / count) * (loss2_val - total_loss2)
 
-    # Print the final averaged losses
-    print(f"Final Average MAE: {total_loss1:.5f}")
-    print(f"Final Average Last MAE: {total_loss2:.5f}")
+            # Update progress bar description with both averaged losses
+            pbar.set_description(
+                f"Avg MAE: {total_loss1:.5f}, Avg Last MAE: {total_loss2:.5f}"
+            )
+            pbar.update(1)
 
+    # Return both averaged losses
     return total_loss1, total_loss2
 
 
