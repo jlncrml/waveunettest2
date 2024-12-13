@@ -61,12 +61,6 @@ class LastSamplesMAELoss(nn.Module):
         last_out = output[..., -self.n_samples:]
         last_tgt = target[..., -self.n_samples:]
 
-        # torch.set_printoptions(threshold=torch.inf)
-        # print("OUT")
-        # print(last_out)
-        # print("Target")
-        # print(last_tgt)
-
         # Compute MAE on the last samples
         loss = self.mae_loss(last_out, last_tgt)
         return loss
@@ -108,8 +102,8 @@ def main(args):
         except Exception as e:
             print(f"Error with sample {i}: {e}")
 
-    criterion = LastSamplesMAELoss()
-    filtered_criterion = nn.L1Loss()
+    criterion = nn.L1Loss()
+    filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
@@ -271,7 +265,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 
             # Update progress bar description with both averaged losses
             pbar.set_description(
-                f"Avg Last MAE: {total_loss1:.5f}, Avg MAE: {total_loss2:.5f}"
+                f"Avg MAE: {total_loss1:.5f}, Avg Last MAE: {total_loss2:.5f}"
             )
             pbar.update(1)
 
@@ -318,7 +312,7 @@ if __name__ == '__main__':
                         help="Number of input audio channels")
     parser.add_argument('--kernel_size', type=int, default=5,
                         help="Filter width of kernels. Has to be an odd number")
-    parser.add_argument('--output_size', type=float, default=0.5,
+    parser.add_argument('--output_size', type=float, default=0.25,
                         help="Output duration")
     parser.add_argument('--strides', type=int, default=4,
                         help="Strides in Waveunet")
