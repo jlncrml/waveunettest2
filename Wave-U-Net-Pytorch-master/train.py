@@ -249,8 +249,11 @@ def validate(args, model, criterion1, criterion2, test_data):
 
     model.eval()
     total_loss = 0.0
-    with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
-        for example_num, (x, target) in enumerate(dataloader):
+    last_loss2_val = None
+    count = 0
+
+    with torch.no_grad():
+        for x, target in dataloader:
             if args.cuda:
                 x = x.cuda()
                 target = target.cuda()
@@ -262,14 +265,16 @@ def validate(args, model, criterion1, criterion2, test_data):
 
             loss2 = criterion2(out, target)
             loss2_val = loss2.item()
+            last_loss2_val = loss2_val  # Keep updating with the most recent last MAE
 
-            total_loss += (1.0 / (example_num + 1)) * (loss1_val - total_loss) # Online averaging of the first loss
+            count += 1
+            # Online average for first loss
+            total_loss += (1.0 / count) * (loss1_val - total_loss)
 
-            pbar.set_description( # Update progress bar with both losses
-                f"MAE: {total_loss:.5f}, Last MAE: {loss2_val:.5f} -----------------------------------------------"
-            )
-
-            pbar.update(1)
+    # After finishing all batches, print the final average and last MAE
+    print(f"Final Average MAE: {total_loss:.5f}")
+    if last_loss2_val is not None:
+        print(f"Final Last MAE: {last_loss2_val:.5f}")
 
     return total_loss
 
