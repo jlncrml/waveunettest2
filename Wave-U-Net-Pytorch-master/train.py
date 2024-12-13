@@ -248,8 +248,8 @@ def validate(args, model, criterion1, criterion2, test_data):
     )
 
     model.eval()
-    total_loss = 0.0
-    last_loss2_val = None
+    total_loss1 = 0.0
+    total_loss2 = 0.0
     count = 0
 
     with torch.no_grad():
@@ -261,22 +261,21 @@ def validate(args, model, criterion1, criterion2, test_data):
             out = model(x)
 
             loss1 = criterion1(out, target)
-            loss1_val = loss1.item()
-
             loss2 = criterion2(out, target)
+
+            loss1_val = loss1.item()
             loss2_val = loss2.item()
-            last_loss2_val = loss2_val  # Keep updating with the most recent last MAE
 
             count += 1
-            # Online average for first loss
-            total_loss += (1.0 / count) * (loss1_val - total_loss)
+            # Online averaging for both losses
+            total_loss1 += (1.0 / count) * (loss1_val - total_loss1)
+            total_loss2 += (1.0 / count) * (loss2_val - total_loss2)
 
-    # After finishing all batches, print the final average and last MAE
-    print(f"Final Average MAE: {total_loss:.5f}")
-    if last_loss2_val is not None:
-        print(f"Final Last MAE: {last_loss2_val:.5f}")
+    # Print the final averaged losses
+    print(f"Final Average MAE: {total_loss1:.5f}")
+    print(f"Final Average Last MAE: {total_loss2:.5f}")
 
-    return total_loss
+    return total_loss1, total_loss2
 
 
 if __name__ == '__main__':
