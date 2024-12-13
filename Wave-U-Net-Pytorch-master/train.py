@@ -149,7 +149,6 @@ def main(args):
                 out = model(x) # Forward pass
 
                 loss = criterion(out, targets) # Compute loss
-                print(LastSamplesMAELoss()(out, targets))
 
                 loss.backward()  # Backward pass and optimization
                 optimizer.step()
