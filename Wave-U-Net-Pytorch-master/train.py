@@ -108,8 +108,8 @@ def main(args):
         except Exception as e:
             print(f"Error with sample {i}: {e}")
 
-    criterion = nn.L1Loss() # LOSS
-    filtered_criterion = LastSamplesMAELoss()
+    criterion = LastSamplesMAELoss()
+    filtered_criterion = nn.L1Loss()
 
     optimizer = Adam(params=model.parameters(), lr=args.lr) # OPTIMIZER
 
@@ -271,7 +271,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 
             # Update progress bar description with both averaged losses
             pbar.set_description(
-                f"Avg MAE: {total_loss1:.5f}, Avg Last MAE: {total_loss2:.5f}"
+                f"Avg Last MAE: {total_loss1:.5f}, Avg MAE: {total_loss2:.5f}"
             )
             pbar.update(1)
 
