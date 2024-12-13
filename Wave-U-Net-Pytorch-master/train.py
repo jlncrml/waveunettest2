@@ -61,6 +61,12 @@ class LastSamplesMAELoss(nn.Module):
         last_out = output[..., -self.n_samples:]
         last_tgt = target[..., -self.n_samples:]
 
+        # torch.set_printoptions(threshold=torch.inf)
+        # print("OUT")
+        # print(last_out)
+        # print("Target")
+        # print(last_tgt)
+
         # Compute MAE on the last samples
         loss = self.mae_loss(last_out, last_tgt)
         return loss
@@ -143,6 +149,7 @@ def main(args):
                 out = model(x) # Forward pass
 
                 loss = criterion(out, targets) # Compute loss
+                print(LastSamplesMAELoss()(out, targets))
 
                 loss.backward()  # Backward pass and optimization
                 optimizer.step()
@@ -307,7 +314,7 @@ if __name__ == '__main__':
                         help="Number of input audio channels")
     parser.add_argument('--kernel_size', type=int, default=5,
                         help="Filter width of kernels. Has to be an odd number")
-    parser.add_argument('--output_size', type=float, default=1.5,
+    parser.add_argument('--output_size', type=float, default=0.5,
                         help="Output duration")
     parser.add_argument('--strides', type=int, default=4,
                         help="Strides in Waveunet")
