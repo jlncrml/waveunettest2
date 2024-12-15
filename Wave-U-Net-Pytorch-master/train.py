@@ -198,7 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--levels', type=int, default=6)
     parser.add_argument('--depth', type=int, default=1)
-    parser.add_argument('--sr', type=int, default=6000)
+    parser.add_argument('--sr', type=int, default=12000)
     parser.add_argument('--kernel_size', type=int, default=5)
     parser.add_argument('--output_size', type=float, default=2.0)
     parser.add_argument('--strides', type=int, default=4)
