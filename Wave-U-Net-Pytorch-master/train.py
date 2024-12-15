@@ -199,7 +199,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--min_lr', type=float, default=5e-5)
     parser.add_argument('--cycles', type=int, default=2)
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--levels', type=int, default=6)
     parser.add_argument('--depth', type=int, default=1)
     parser.add_argument('--sr', type=int, default=12000)
