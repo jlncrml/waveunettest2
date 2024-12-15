@@ -12,13 +12,12 @@ from data.dataset import SeparationDataset, get_dataset
 from data.dataset import get_dataset_folds
 from data.utils import crop_targets, random_amplify
 from model.waveunet import Waveunet
-import logging
 import torch
 import torch.nn as nn
 
 
 class LastSamplesMAELoss(nn.Module):
-    def __init__(self, n_samples=2048):
+    def __init__(self, n_samples=512):
         super(LastSamplesMAELoss, self).__init__()
         self.n_samples = n_samples
         self.mae_loss = nn.L1Loss()
@@ -55,8 +54,8 @@ def main(args):
     crop_func = partial(crop_targets, shapes=model.shapes)
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
-    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
-    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
+    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True, audio_transform=augment_func)
+    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False, audio_transform=crop_func)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
