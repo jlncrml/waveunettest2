@@ -55,6 +55,10 @@ class SeparationDataset(Dataset):
                 mix_audio = mix_audio[:, ::4]
                 piano_source_audio = piano_source_audio[:, ::4]
                 source_audios = source_audios[:, ::4]
+            elif self.sr == 6000:
+                mix_audio = mix_audio[:, ::8]
+                piano_source_audio = piano_source_audio[:, ::8]
+                source_audios = source_audios[:, ::8]
 
             min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
             mix_audio = mix_audio[:, :min_length]
@@ -70,6 +74,7 @@ class SeparationDataset(Dataset):
             })
 
         lengths = [((d["target_length"] // self.shapes["output_frames"]) + 1) for d in self.data]
+
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
             self.length = self.start_pos[-1]
@@ -139,11 +144,6 @@ class SeparationDataset(Dataset):
 
 
 def get_dataset(database_path):
-    '''
-    Retrieve audio file paths for your custom dataset
-    :param database_path: Root directory of your dataset
-    :return: list containing train and test samples, each sample containing all audio paths
-    '''
     subsets = []
 
     for subset in ["train", "test"]:
@@ -184,7 +184,7 @@ def get_dataset(database_path):
     return subsets
 
 
-def get_dataset_folds(root_path, version="HQ"):
+def get_dataset_folds(root_path):
     dataset = get_dataset(root_path)
 
     train_val_list = dataset[0]

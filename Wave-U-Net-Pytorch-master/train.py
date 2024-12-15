@@ -25,11 +25,9 @@ class LastSamplesMAELoss(nn.Module):
     def forward(self, output, target):
         assert output.shape == target.shape, "Output and target must have the same shape."
 
-        # Extract the last n_samples from each signal
         last_out = output[..., -self.n_samples:]
         last_tgt = target[..., -self.n_samples:]
 
-        # Compute MAE on the last samples
         loss = self.mae_loss(last_out, last_tgt)
         return loss
 
@@ -200,7 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--levels', type=int, default=6)
     parser.add_argument('--depth', type=int, default=1)
-    parser.add_argument('--sr', type=int, default=12000)
+    parser.add_argument('--sr', type=int, default=6000)
     parser.add_argument('--kernel_size', type=int, default=5)
     parser.add_argument('--output_size', type=float, default=2.0)
     parser.add_argument('--strides', type=int, default=4)
