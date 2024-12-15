@@ -17,7 +17,7 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
 
 
 class SeparationDataset(Dataset):
-    def __init__(self, dataset, partition, sr, shapes, random_hops, audio_transform=None, cutoff_freq=5500,
+    def __init__(self, dataset, partition, sr, shapes, random_hops, audio_transform=None, cutoff_freq=11000,
                  filter_order=6):
         super().__init__()
         self.sr = sr
