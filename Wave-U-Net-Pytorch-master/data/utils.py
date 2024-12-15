@@ -27,8 +27,7 @@ def load(path, sr=48000, mono=True, mode="numpy", offset=0.0, duration=None):
     y, curr_sr = librosa.load(path, sr=sr, mono=mono, res_type='kaiser_fast', offset=offset, duration=duration)
 
     if len(y.shape) == 1:
-        # Expand channel dimension
-        y = y[np.newaxis, :]
+        y = y[np.newaxis, :] # Expand channel dimension
 
     if mode == "pytorch":
         y = torch.tensor(y)

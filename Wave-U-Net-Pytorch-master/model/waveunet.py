@@ -152,13 +152,11 @@ class DownsamplingBlock(nn.Module):
 
 
 class Waveunet(nn.Module):
-    def __init__(self, num_inputs, num_channels, num_outputs, kernel_size, target_output_size, depth=1, strides=2):
+    def __init__(self, num_channels, kernel_size, target_output_size, depth=1, strides=2):
         super(Waveunet, self).__init__()
         self.num_levels = len(num_channels)
         self.strides = strides
         self.kernel_size = kernel_size
-        self.num_inputs = num_inputs
-        self.num_outputs = num_outputs
         self.depth = depth
 
         assert (kernel_size % 2 == 1)
@@ -166,7 +164,7 @@ class Waveunet(nn.Module):
         # Downsampling blocks
         self.downsampling_blocks = nn.ModuleList()
         for i in range(self.num_levels - 1):
-            in_ch = self.num_inputs if i == 0 else num_channels[i]
+            in_ch = 2 if i == 0 else num_channels[i]
             self.downsampling_blocks.append(
                 DownsamplingBlock(in_ch, num_channels[i], num_channels[i + 1],
                                   kernel_size, strides, depth)
@@ -186,7 +184,7 @@ class Waveunet(nn.Module):
             )
 
         # Output convolution
-        self.output_conv = nn.Conv1d(num_channels[0], self.num_outputs, 1)
+        self.output_conv = nn.Conv1d(num_channels[0], 1, 1)
 
         self.set_output_size(target_output_size)
 
@@ -246,8 +244,7 @@ class Waveunet(nn.Module):
         for idx, block in enumerate(self.upsampling_blocks):
             out = block(out, shortcuts[-1 - idx])
 
-        # Output
-        out = self.output_conv(out)
+        out = self.output_conv(out) # Output
 
         if not self.training:
             out = out.clamp(min=-1.0, max=1.0)
