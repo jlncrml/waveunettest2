@@ -16,8 +16,6 @@ import logging
 import torch
 import torch.nn as nn
 
-logging.basicConfig(level=logging.DEBUG)
-
 
 class LastSamplesMAELoss(nn.Module):
     def __init__(self, n_samples=2048):
@@ -57,8 +55,8 @@ def main(args):
     crop_func = partial(crop_targets, shapes=model.shapes)
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
-    train_data = SeparationDataset(dataset_data, "train", args.sr, model.shapes, True, audio_transform=augment_func)
-    val_data = SeparationDataset(dataset_data, "val", args.sr, model.shapes, False, audio_transform=crop_func)
+    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True, args.hdf_dir, audio_transform=augment_func)
+    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False, args.hdf_dir, audio_transform=crop_func)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
@@ -195,6 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--features', type=int, default=32)
     parser.add_argument('--log_dir', type=str, default='logs/waveunet')
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
+    parser.add_argument('--hdf_dir', type=str, default="hdf")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--min_lr', type=float, default=5e-5)
