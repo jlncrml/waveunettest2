@@ -17,7 +17,7 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
 
 
 class SeparationDataset(Dataset):
-    def __init__(self, dataset, partition, sr, shapes, random_hops, audio_transform=None, cutoff_freq=10000,
+    def __init__(self, dataset, partition, sr, shapes, random_hops, audio_transform=None, cutoff_freq=5500,
                  filter_order=6):
         super().__init__()
         self.sr = sr
@@ -45,6 +45,11 @@ class SeparationDataset(Dataset):
             if self.sr == 24000:
                 mix_audio, piano_source_audio, voice_audio = map(
                     lambda audio: audio[:, ::2],
+                    (mix_audio, piano_source_audio, voice_audio)
+                )
+            elif self.sr == 12000:
+                mix_audio, piano_source_audio, voice_audio = map(
+                    lambda audio: audio[:, ::4],
                     (mix_audio, piano_source_audio, voice_audio)
                 )
 

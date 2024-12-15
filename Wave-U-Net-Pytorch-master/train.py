@@ -2,7 +2,6 @@ import argparse
 import os
 import time
 from functools import partial
-import pickle
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import Adam
@@ -14,34 +13,10 @@ from data.dataset import get_dataset_folds
 from data.utils import crop_targets, random_amplify
 from model.waveunet import Waveunet
 import logging
-from predict import predict_song
-logging.basicConfig(level=logging.DEBUG)
-from scipy.signal import butter, lfilter
 import torch
 import torch.nn as nn
 
-class LowPassMAELoss(nn.Module):
-    def __init__(self, cutoff_freq, sample_rate, filter_order=6):
-        super(LowPassMAELoss, self).__init__()
-        self.cutoff_freq = cutoff_freq
-        self.sample_rate = sample_rate
-        self.filter_order = filter_order
-        self.mae_loss = nn.L1Loss()
-
-        nyquist = 0.5 * sample_rate # Design the low-pass Butterworth filter
-        self.b, self.a = butter(filter_order, cutoff_freq / nyquist, btype='low', analog=False)
-
-    def forward(self, output, target):
-        assert output.shape == target.shape, "Output and target must have the same shape."
-        filtered_output = self.low_pass_filter(output) # Apply low-pass filter to both output and target
-        filtered_target = self.low_pass_filter(target)
-        loss = self.mae_loss(filtered_output, filtered_target) # Compute MAE loss on filtered signals
-        return loss
-
-    def low_pass_filter(self, signal):
-        signal_np = signal.cpu().detach().numpy() # Convert to NumPy array for filtering
-        filtered_signal = lfilter(self.b, self.a, signal_np, axis=-1) # Apply the filter along the time axis
-        return torch.from_numpy(filtered_signal).to(signal.device) # Convert back to torch.Tensor
+logging.basicConfig(level=logging.DEBUG)
 
 
 class LastSamplesMAELoss(nn.Module):
@@ -69,7 +44,7 @@ def main(args):
 
     instrument = "voice"
 
-    model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, depth=args.depth, strides=args.strides)
+    model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, strides=args.strides)
 
     if args.cuda:
         model = model_utils.DataParallel(model)
@@ -82,8 +57,6 @@ def main(args):
     crop_func = partial(crop_targets, shapes=model.shapes)
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
-    print(model.shapes)
-
     train_data = SeparationDataset(dataset_data, "train", args.sr, model.shapes, True, audio_transform=augment_func)
     val_data = SeparationDataset(dataset_data, "val", args.sr, model.shapes, False, audio_transform=crop_func)
 
@@ -95,10 +68,6 @@ def main(args):
     optimizer = Adam(params=model.parameters(), lr=args.lr)
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
-
-    if args.load_model is not None:
-        print("Continuing training model from checkpoint " + str(args.load_model))
-        state = model_utils.load_model(model, optimizer, args.load_model, args.cuda)
 
     print('TRAINING START')
 
@@ -180,30 +149,6 @@ def main(args):
     writer.close()
 
 
-def evaluate(args, dataset, model, instruments):
-    perfs = list()
-    model.eval()
-    with torch.no_grad():
-        for example in dataset:
-            print("Evaluating " + example["mix"])
-
-            # Load source references in their original sr and channel number
-            target_sources = np.stack([data.utils.load(example[instrument], sr=None, mono=False)[0].T for instrument in instruments])
-
-            # Predict using mixture
-            pred_sources = predict_song(args, example["mix"], model)
-            pred_sources = np.stack([pred_sources[key].T for key in instruments])
-
-            # Evaluate
-            SDR, ISR, SIR, SAR, _ = museval.metrics.bss_eval(target_sources, pred_sources)
-            song = {}
-            for idx, name in enumerate(instruments):
-                song[name] = {"SDR" : SDR[idx], "ISR" : ISR[idx], "SIR" : SIR[idx], "SAR" : SAR[idx]}
-            perfs.append(song)
-
-    return perfs
-
-
 def validate(args, model, criterion1, criterion2, test_data):
     dataloader = torch.utils.data.DataLoader(
         test_data,
@@ -213,8 +158,10 @@ def validate(args, model, criterion1, criterion2, test_data):
     )
 
     model.eval()
+
     total_loss1 = 0.0
     total_loss2 = 0.0
+
     with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
         for example_num, (x, target) in enumerate(dataloader):
             if args.cuda:
@@ -249,14 +196,13 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', type=str, default='logs/waveunet')
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
-    parser.add_argument('--load_model', type=str, default=None)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--min_lr', type=float, default=5e-5)
     parser.add_argument('--cycles', type=int, default=2)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--levels', type=int, default=6)
     parser.add_argument('--depth', type=int, default=1)
-    parser.add_argument('--sr', type=int, default=48000)
+    parser.add_argument('--sr', type=int, default=12000)
     parser.add_argument('--kernel_size', type=int, default=5)
     parser.add_argument('--output_size', type=float, default=2.0)
     parser.add_argument('--strides', type=int, default=4)
