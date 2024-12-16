@@ -24,22 +24,27 @@ class SeparationDataset(Dataset):
         self.shapes = shapes
         self.audio_transform = audio_transform
         self.instruments = instruments
-        self.overlap_factor = 0.5
-        self.variation_factor = 0.25
+        self.cutoff_freq = sr // 2 - 1000
 
         self.data = []
-        self.snippet_indices = []
 
-        for example in dataset.get(partition, []):
-            mix_audio, _ = load(example["mix"], mono=True)
-            piano_source_audio, _ = load(example["piano_source"], mono=True)
-            source_audios = [load(example[src], mono=True)[0] for src in instruments]
+        num_examples = len(dataset.get(partition, []))
+        if num_examples == 0:
+            raise ValueError(f"No data found for partition '{partition}'.")
+
+        for example in dataset[partition]:
+            mix_audio, _ = load(example["mix"], mono=(self.channels == 1))
+            piano_source_audio, _ = load(example["piano_source"], mono=(self.channels == 1))
+            source_audios = [load(example[src], mono=(self.channels == 1))[0] for src in instruments]
             source_audios = np.concatenate(source_audios, axis=0)
 
-            # Downsample and align lengths
-            mix_audio = butter_lowpass_filter(mix_audio[:, ::4], sr // 2 - 1000, sr)
-            piano_source_audio = butter_lowpass_filter(piano_source_audio[:, ::4], sr // 2 - 1000, sr)
-            source_audios = butter_lowpass_filter(source_audios[:, ::4], sr // 2 - 1000, sr)
+            mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
+            piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
+            source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
+
+            mix_audio = mix_audio[:, ::4]
+            piano_source_audio = piano_source_audio[:, ::4]
+            source_audios = source_audios[:, ::4]
 
             min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
             mix_audio = mix_audio[:, :min_length]
@@ -51,45 +56,58 @@ class SeparationDataset(Dataset):
                 "piano_source": piano_source_audio,
                 "targets": source_audios,
                 "length": min_length,
+                "target_length": min_length
             })
 
-            # Calculate base indices with overlap
-            input_frames = shapes["input_frames"]
-            output_frames = shapes["output_frames"]
-            step_size = int(output_frames * (1 - self.overlap_factor))  # Step size for 50% overlap
-            num_snippets = (min_length - input_frames) // step_size + 1
-            base_indices = np.arange(num_snippets) * step_size
+        lengths = [((d["target_length"] // self.shapes["output_frames"]) + 1) for d in self.data]
 
-            # Add variation to the base indices
-            max_shift = int(output_frames * self.variation_factor)  # 25% variation
-            random_shifts = np.random.randint(-max_shift, max_shift + 1, size=base_indices.shape)
-            adjusted_indices = base_indices + random_shifts
-
-            # Ensure indices are valid
-            adjusted_indices = np.clip(adjusted_indices, 0, min_length - input_frames)
-            self.snippet_indices.append(adjusted_indices)
-
-        self.cumulative_snippets = np.cumsum([len(indices) for indices in self.snippet_indices])
+        if lengths:
+            self.start_pos = SortedList(np.cumsum(lengths))
+            self.length = self.start_pos[-1]
+        else:
+            self.start_pos = SortedList()
+            self.length = 0
 
     def __len__(self):
-        return self.cumulative_snippets[-1]
+        return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        # Find the track corresponding to this global index
-        track_idx = np.searchsorted(self.cumulative_snippets, index, side="right")
-        if track_idx > 0:
-            index -= self.cumulative_snippets[track_idx - 1]
+        if self.length == 0:
+            raise IndexError("Cannot get item from an empty dataset.")
 
-        item = self.data[track_idx]
-        snippet_index = self.snippet_indices[track_idx][index]
+        audio_idx = self.start_pos.bisect_right(index)
+        if audio_idx > 0:
+            index = index - self.start_pos[audio_idx - 1]
+
+        item = self.data[audio_idx]
+        audio_length = item["length"]
+        target_length = item["target_length"]
+
+        if self.random_hops:
+            start_target_pos = np.random.randint(0, max(target_length - self.shapes["output_frames"] + 1, 1))
+        else:
+            start_target_pos = index * self.shapes["output_frames"]
+
         input_frames = self.shapes["input_frames"]
+        output_start_frame = self.shapes["output_start_frame"]
 
-        start_pos = snippet_index
+        # Calculate desired snippet boundaries
+        start_pos = start_target_pos - output_start_frame
         end_pos = start_pos + input_frames
 
-        mix_audio = item["mix"][:, start_pos:end_pos]
-        piano_source_audio = item["piano_source"][:, start_pos:end_pos]
-        targets = item["targets"][:, start_pos:end_pos]
+        # Adjust so the position stays in bounds
+        if start_pos < 0:
+            start_pos = 0
+            end_pos = input_frames  # Adjust end to maintain fixed length
+
+        if end_pos > audio_length:
+            end_pos = audio_length
+            start_pos = audio_length - input_frames  # Adjust start to maintain fixed length
+
+        # Slice the audio snippets without padding
+        mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
+        piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
+        targets = item["targets"][:, start_pos:end_pos].astype(np.float32)
 
         audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
 
