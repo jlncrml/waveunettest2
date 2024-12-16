@@ -83,28 +83,32 @@ class SeparationDataset(Dataset):
         audio_length = item["length"]
         target_length = item["target_length"]
 
-        if self.random_hops:
-            start_target_pos = np.random.randint(0, max(target_length - self.shapes["output_frames"] + 1, 1))
-        else:
-            start_target_pos = index * self.shapes["output_frames"]
-
         input_frames = self.shapes["input_frames"]
+        output_frames = self.shapes["output_frames"]
         output_start_frame = self.shapes["output_start_frame"]
 
-        # Calculate desired snippet boundaries
+        if self.random_hops:
+            start_target_pos = np.random.randint(0, max(target_length - output_frames + 1, 1))
+        else:
+            start_target_pos = index * output_frames
+
+        # Calculate initial start/end
         start_pos = start_target_pos - output_start_frame
         end_pos = start_pos + input_frames
 
-        # Adjust so the position stays in bounds
+        # Adjust start_pos and end_pos to fit exactly in the valid range
         if start_pos < 0:
+            # Shift snippet forward
             start_pos = 0
-            end_pos = input_frames  # Adjust end to maintain fixed length
+            end_pos = start_pos + input_frames
 
         if end_pos > audio_length:
+            # Shift snippet backward
             end_pos = audio_length
-            start_pos = audio_length - input_frames  # Adjust start to maintain fixed length
+            start_pos = end_pos - input_frames
+            # Assuming input_frames <= audio_length, start_pos should now be >= 0
 
-        # Slice the audio snippets without padding
+        # Now we have a snippet of length input_frames without going out of bounds
         mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
         piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
         targets = item["targets"][:, start_pos:end_pos].astype(np.float32)
