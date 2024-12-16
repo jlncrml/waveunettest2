@@ -3,7 +3,6 @@ import os
 import time
 from functools import partial
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter
 from torch.optim import Adam
 from tqdm import tqdm
 import model.utils as model_utils
@@ -43,10 +42,7 @@ def main(args):
 
     if args.cuda:
         model = model_utils.DataParallel(model)
-        print("move model to gpu")
         model.cuda()
-
-    writer = SummaryWriter(args.log_dir)
 
     dataset_data = get_dataset_folds(args.dataset_dir) # DATASET
     crop_func = partial(crop_targets, shapes=model.shapes)
@@ -91,8 +87,6 @@ def main(args):
                     args.lr
                 )
 
-                writer.add_scalar("lr", utils.get_lr(optimizer), state["step"])
-
                 optimizer.zero_grad() # Zero gradients
 
                 out = model(x) # Forward pass
@@ -110,23 +104,11 @@ def main(args):
                 t = time.time() - t # Timing
                 avg_time += (1.0 / (example_num + 1)) * (t - avg_time)
 
-                writer.add_scalar("train_loss", avg_loss, state["step"])
-
-                if example_num % args.example_freq == 0:
-                    input_centre = torch.mean(
-                        x[0, :, model.shapes["output_start_frame"]:model.shapes["output_end_frame"]],
-                        dim=0
-                    )
-                    writer.add_audio("input", input_centre.cpu(), state["step"], sample_rate=args.sr)
-                    writer.add_audio("pred", torch.mean(out[0].cpu(), dim=0), state["step"], sample_rate=args.sr)
-                    writer.add_audio("target", torch.mean(targets[0].cpu(), dim=0), state["step"], sample_rate=args.sr)
-
                 pbar.update(1)
 
 
         val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
         print("VALIDATION FINISHED: LOSS: " + str(val_loss) + "LAST 2048 LOSS: " + str(last_val_loss))
-        writer.add_scalar("val_loss", val_loss, state["step"])
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
         if val_loss >= state["best_loss"]:
@@ -141,7 +123,6 @@ def main(args):
         print("Saving model...")
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
-    writer.close()
 
 
 def validate(args, model, criterion1, criterion2, test_data):
@@ -188,7 +169,6 @@ if __name__ == '__main__':
     parser.add_argument('--cuda', action='store_true')
     parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--features', type=int, default=32)
-    parser.add_argument('--log_dir', type=str, default='logs/waveunet')
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
     parser.add_argument('--hdf_dir', type=str, default="hdf")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
