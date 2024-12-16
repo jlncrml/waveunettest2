@@ -1,9 +1,6 @@
-import os
-import h5py
 from scipy.signal import butter, lfilter
 from sortedcontainers import SortedList
 from torch.utils.data import Dataset
-from tqdm import tqdm
 import os
 import numpy as np
 import glob
@@ -51,6 +48,10 @@ class SeparationDataset(Dataset):
                 mix_audio = mix_audio[:, ::2]
                 piano_source_audio = piano_source_audio[:, ::2]
                 source_audios = source_audios[:, ::2]
+            elif self.sr == 16000:
+                mix_audio = mix_audio[:, ::3]
+                piano_source_audio = piano_source_audio[:, ::3]
+                source_audios = source_audios[:, ::3]
             elif self.sr == 12000:
                 mix_audio = mix_audio[:, ::4]
                 piano_source_audio = piano_source_audio[:, ::4]
@@ -158,7 +159,6 @@ def get_dataset(database_path):
             piano_bleed_path = os.path.join(track_folder, "piano_speaker_bleed.wav")
             piano_source_path = os.path.join(track_folder, "piano_source.wav")  # New line
             mix_path = os.path.join(track_folder, "mix.wav")
-            acc_path = piano_bleed_path
 
             # Ensure the stem files exist
             if not os.path.exists(voice_path):
@@ -175,7 +175,6 @@ def get_dataset(database_path):
             example["voice"] = voice_path
             example["piano_speaker_bleed"] = piano_bleed_path
             example["piano_source"] = piano_source_path  # Add this line
-            example["accompaniment"] = acc_path  # Accompaniment is piano_speaker_bleed
 
             samples.append(example)
 
