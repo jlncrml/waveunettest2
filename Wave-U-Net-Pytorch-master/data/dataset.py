@@ -31,15 +31,15 @@ class SeparationDataset(Dataset):
         self.snippet_indices = []
 
         for example in dataset.get(partition, []):
-            mix_audio, _ = load(example["mix"], mono=(self.channels == 1))
-            piano_source_audio, _ = load(example["piano_source"], mono=(self.channels == 1))
-            source_audios = [load(example[src], mono=(self.channels == 1))[0] for src in instruments]
+            mix_audio, _ = load(example["mix"], mono=True)
+            piano_source_audio, _ = load(example["piano_source"], mono=True)
+            source_audios = [load(example[src], mono=True)[0] for src in instruments]
             source_audios = np.concatenate(source_audios, axis=0)
 
             # Downsample and align lengths
-            mix_audio = butter_lowpass_filter(mix_audio[:, ::4], sr // 4 - 1000, sr)
-            piano_source_audio = butter_lowpass_filter(piano_source_audio[:, ::4], sr // 4 - 1000, sr)
-            source_audios = butter_lowpass_filter(source_audios[:, ::4], sr // 4 - 1000, sr)
+            mix_audio = butter_lowpass_filter(mix_audio[:, ::4], sr // 2 - 1000, sr)
+            piano_source_audio = butter_lowpass_filter(piano_source_audio[:, ::4], sr // 2 - 1000, sr)
+            source_audios = butter_lowpass_filter(source_audios[:, ::4], sr // 2 - 1000, sr)
 
             min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
             mix_audio = mix_audio[:, :min_length]
