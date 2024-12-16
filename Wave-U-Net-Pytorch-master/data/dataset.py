@@ -42,6 +42,7 @@ class SeparationDataset(Dataset):
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
+            # Downsample
             mix_audio = mix_audio[:, ::4]
             piano_source_audio = piano_source_audio[:, ::4]
             source_audios = source_audios[:, ::4]
@@ -51,6 +52,16 @@ class SeparationDataset(Dataset):
             piano_source_audio = piano_source_audio[:, :min_length]
             source_audios = source_audios[:, :min_length]
 
+            # Check if this track can produce at least one snippet without padding
+            input_frames = self.shapes["input_frames"]
+            output_frames = self.shapes["output_frames"]
+
+            # max_start is the largest starting position for a full snippet
+            max_start = min_length - input_frames
+            if max_start < 0:
+                # Cannot produce a full snippet, skip this track
+                continue
+
             self.data.append({
                 "mix": mix_audio,
                 "piano_source": piano_source_audio,
@@ -59,7 +70,15 @@ class SeparationDataset(Dataset):
                 "target_length": min_length
             })
 
-        lengths = [((d["target_length"] // self.shapes["output_frames"]) + 1) for d in self.data]
+        # Compute lengths after filtering
+        lengths = []
+        for d in self.data:
+            target_length = d["target_length"]
+            input_frames = self.shapes["input_frames"]
+            output_frames = self.shapes["output_frames"]
+            max_start = target_length - input_frames
+            count = (max_start // output_frames) + 1
+            lengths.append(count)
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
@@ -88,27 +107,33 @@ class SeparationDataset(Dataset):
         output_start_frame = self.shapes["output_start_frame"]
 
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(target_length - output_frames + 1, 1))
+            # If random hops, choose a random start within valid range
+            max_start = target_length - input_frames
+            start_target_pos = np.random.randint(0, max_start + 1)
         else:
+            # Deterministic snippet index
             start_target_pos = index * output_frames
+            # Ensure this index does not exceed max_start (should not if lengths are calculated correctly)
 
-        # Calculate initial start/end
+        # Desired start and end positions
         start_pos = start_target_pos - output_start_frame
         end_pos = start_pos + input_frames
 
-        # Adjust start_pos and end_pos to fit exactly in the valid range
+        # Adjust start/end if out of range - no padding, just shifting
         if start_pos < 0:
-            # Shift snippet forward
-            start_pos = 0
-            end_pos = start_pos + input_frames
+            shift = -start_pos
+            start_pos += shift
+            end_pos += shift
 
         if end_pos > audio_length:
-            # Shift snippet backward
-            end_pos = audio_length
-            start_pos = end_pos - input_frames
-            # Assuming input_frames <= audio_length, start_pos should now be >= 0
+            shift = end_pos - audio_length
+            start_pos -= shift
+            end_pos -= shift
 
-        # Now we have a snippet of length input_frames without going out of bounds
+        # After shifting, we must have a perfect snippet
+        if (end_pos - start_pos) != input_frames or start_pos < 0 or end_pos > audio_length:
+            raise ValueError("Cannot extract a valid full-length snippet without padding.")
+
         mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
         piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
         targets = item["targets"][:, start_pos:end_pos].astype(np.float32)
@@ -119,13 +144,6 @@ class SeparationDataset(Dataset):
             audio, targets = self.audio_transform(audio, targets)
 
         return audio, targets
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
 
 
 def get_dataset(database_path):
