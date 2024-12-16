@@ -157,7 +157,7 @@ def get_dataset(database_path):
             example = {}
             voice_path = os.path.join(track_folder, "voice.wav")
             piano_bleed_path = os.path.join(track_folder, "piano_speaker_bleed.wav")
-            piano_source_path = os.path.join(track_folder, "piano_source.wav")  # New line
+            piano_source_path = os.path.join(track_folder, "piano_source.wav")
             mix_path = os.path.join(track_folder, "mix.wav")
 
             # Ensure the stem files exist
@@ -174,7 +174,7 @@ def get_dataset(database_path):
             example["mix"] = mix_path
             example["voice"] = voice_path
             example["piano_speaker_bleed"] = piano_bleed_path
-            example["piano_source"] = piano_source_path  # Add this line
+            example["piano_source"] = piano_source_path
 
             samples.append(example)
 
