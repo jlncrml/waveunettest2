@@ -180,7 +180,7 @@ if __name__ == '__main__':
     parser.add_argument('--depth', type=int, default=1)
     parser.add_argument('--sr', type=int, default=12000)
     parser.add_argument('--kernel_size', type=int, default=5)
-    parser.add_argument('--output_size', type=float, default=0.8)
+    parser.add_argument('--output_size', type=float, default=2)
     parser.add_argument('--strides', type=int, default=4)
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--example_freq', type=int, default=200)
