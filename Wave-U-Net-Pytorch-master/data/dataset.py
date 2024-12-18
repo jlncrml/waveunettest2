@@ -27,7 +27,6 @@ class SeparationDataset(Dataset):
         self.cutoff_freq = sr // 2 - 1000
 
         self.data = []
-
         num_examples = len(dataset.get(partition, []))
         if num_examples == 0:
             raise ValueError(f"No data found for partition '{partition}'.")
@@ -35,16 +34,32 @@ class SeparationDataset(Dataset):
         for example in dataset[partition]:
             mix_audio, _ = load(example["mix"], mono=(self.channels == 1))
             piano_source_audio, _ = load(example["piano_source"], mono=(self.channels == 1))
-            source_audios = [load(example[src], mono=(self.channels == 1))[0] for src in instruments]
+            source_audios = []
+            for source in instruments:
+                source_audio, _ = load(example[source], mono=(self.channels == 1))
+                source_audios.append(source_audio)
             source_audios = np.concatenate(source_audios, axis=0)
 
             mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
-            mix_audio = mix_audio[:, ::4]
-            piano_source_audio = piano_source_audio[:, ::4]
-            source_audios = source_audios[:, ::4]
+            if self.sr == 24000:
+                mix_audio = mix_audio[:, ::2]
+                piano_source_audio = piano_source_audio[:, ::2]
+                source_audios = source_audios[:, ::2]
+            elif self.sr == 16000:
+                mix_audio = mix_audio[:, ::3]
+                piano_source_audio = piano_source_audio[:, ::3]
+                source_audios = source_audios[:, ::3]
+            elif self.sr == 12000:
+                mix_audio = mix_audio[:, ::4]
+                piano_source_audio = piano_source_audio[:, ::4]
+                source_audios = source_audios[:, ::4]
+            elif self.sr == 6000:
+                mix_audio = mix_audio[:, ::8]
+                piano_source_audio = piano_source_audio[:, ::8]
+                source_audios = source_audios[:, ::8]
 
             min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
             mix_audio = mix_audio[:, :min_length]
@@ -83,56 +98,41 @@ class SeparationDataset(Dataset):
         audio_length = item["length"]
         target_length = item["target_length"]
 
-        input_frames = self.shapes["input_frames"]
-        output_frames = self.shapes["output_frames"]
-        output_start_frame = self.shapes["output_start_frame"]
-        output_end_frame = self.shapes["output_end_frame"]
-
-        # If the audio is too short for a full snippet, raise an error.
-        if audio_length < input_frames:
-            raise ValueError(
-                f"Audio length {audio_length} is shorter than required snippet length {input_frames}."
-                " Adjust your dataset or snippet size."
-            )
-
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(target_length - output_frames + 1, 1))
+            start_target_pos = np.random.randint(0, max(target_length - self.shapes["output_frames"] + 1, 1))
         else:
-            start_target_pos = index * output_frames
+            start_target_pos = index * self.shapes["output_frames"]
 
-        # Initial desired start and end positions
-        start_pos = start_target_pos - output_start_frame
-        end_pos = start_pos + input_frames
-
-        # Adjust to ensure the snippet fits fully within [0, audio_length]
+        start_pos = start_target_pos - self.shapes["output_start_frame"]
+        pad_front = 0
         if start_pos < 0:
-            # Shift forward
-            shift_amount = -start_pos
-            start_pos += shift_amount
-            end_pos += shift_amount
+            pad_front = abs(start_pos)
+            start_pos = 0
 
+        end_pos = start_target_pos - self.shapes["output_start_frame"] + self.shapes["input_frames"]
+        pad_back = 0
         if end_pos > audio_length:
-            # Shift backward
-            shift_amount = end_pos - audio_length
-            start_pos -= shift_amount
-            end_pos -= shift_amount
-
-        # Double-check that the snippet now fits perfectly
-        if start_pos < 0 or end_pos > audio_length or (end_pos - start_pos) != input_frames:
-            raise ValueError(
-                f"Cannot extract a {input_frames}-frame snippet from audio of length {audio_length} "
-                "without padding or truncation."
-            )
+            pad_back = end_pos - audio_length
+            end_pos = audio_length
 
         mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
-        piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
-        targets = item["targets"][:, start_pos:end_pos].astype(np.float32)
+        if pad_front > 0 or pad_back > 0:
+            mix_audio = np.pad(mix_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        # Zero out mix_audio outside the output range (LAST STEP)
-        mix_audio[:, :output_start_frame] = 0
-        mix_audio[:, output_end_frame:] = 0
+        piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
+        if pad_front > 0 or pad_back > 0:
+            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+
+        mix_audio[:, :self.shapes["output_start_frame"]] = 0
+        mix_audio[:, self.shapes["output_end_frame"]:] = 0
 
         audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
+
+        targets_data = item["targets"][:, start_pos:end_pos].astype(np.float32)
+        if pad_front > 0 or pad_back > 0:
+            targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+
+        targets = targets_data
 
         if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)
