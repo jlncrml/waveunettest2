@@ -32,7 +32,7 @@ class ConvLayer(nn.Module):
         NORM_CHANNELS = 8
 
         if self.transpose:
-            self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride, padding=kernel_size-1)
+            self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride)
         else:
             self.filter = nn.Conv1d(n_inputs, n_outputs, self.kernel_size, stride)
 
@@ -59,18 +59,19 @@ class ConvLayer(nn.Module):
 
     def get_output_size(self, input_size):
         if self.transpose:
-            assert(input_size > 1)
-            curr_size = (input_size - 1)*self.stride + 1 # o = (i-1)//s + 1 => i = (o - 1)*s + 1
+            assert input_size > 1
+            # Transposed convolution: calculate output size without padding
+            curr_size = (input_size - 1) * self.stride + self.kernel_size
         else:
+            # Standard convolution
             curr_size = input_size
+            curr_size = curr_size - self.kernel_size + 1
 
-        curr_size = curr_size - self.kernel_size + 1 # o = i + p - k + 1
-        assert (curr_size > 0)
-
-        if not self.transpose:
-            assert ((curr_size - 1) % self.stride == 0)  # We need to have a value at the beginning and end
+            # Stride adjustment for standard convolution
+            assert ((curr_size - 1) % self.stride == 0)
             curr_size = ((curr_size - 1) // self.stride) + 1
 
+        assert curr_size > 0
         return curr_size
 
 class UpsamplingBlock(nn.Module):
