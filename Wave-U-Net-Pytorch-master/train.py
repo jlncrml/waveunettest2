@@ -40,8 +40,6 @@ def main(args):
 
     model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, strides=args.strides)
 
-    print(model.shapes)
-
     if args.cuda:
         model = model_utils.DataParallel(model)
         model.cuda()
@@ -126,6 +124,7 @@ def main(args):
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
 
+
 def validate(args, model, criterion1, criterion2, test_data):
     dataloader = torch.utils.data.DataLoader(
         test_data,
@@ -181,7 +180,7 @@ if __name__ == '__main__':
     parser.add_argument('--depth', type=int, default=1)
     parser.add_argument('--sr', type=int, default=12000)
     parser.add_argument('--kernel_size', type=int, default=5)
-    parser.add_argument('--output_size', type=float, default=2.0)
+    parser.add_argument('--output_size', type=float, default=0.8)
     parser.add_argument('--strides', type=int, default=4)
     parser.add_argument('--patience', type=int, default=20)
     parser.add_argument('--example_freq', type=int, default=200)

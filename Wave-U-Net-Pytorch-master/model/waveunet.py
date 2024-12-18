@@ -32,7 +32,7 @@ class ConvLayer(nn.Module):
         NORM_CHANNELS = 8
 
         if self.transpose:
-            self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride)
+            self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride, padding=kernel_size-1)
         else:
             self.filter = nn.Conv1d(n_inputs, n_outputs, self.kernel_size, stride)
 
@@ -59,29 +59,32 @@ class ConvLayer(nn.Module):
 
     def get_output_size(self, input_size):
         if self.transpose:
-            assert input_size > 1
-            # Transposed convolution: calculate output size without padding
-            curr_size = (input_size - 1) * self.stride + self.kernel_size
+            assert(input_size > 1)
+            curr_size = (input_size - 1)*self.stride + 1 # o = (i-1)//s + 1 => i = (o - 1)*s + 1
         else:
-            # Standard convolution
             curr_size = input_size
-            curr_size = curr_size - self.kernel_size + 1
 
-            # Stride adjustment for standard convolution
-            assert ((curr_size - 1) % self.stride == 0)
+        curr_size = curr_size - self.kernel_size + 1 # o = i + p - k + 1
+        assert (curr_size > 0)
+
+        if not self.transpose:
+            assert ((curr_size - 1) % self.stride == 0)  # We need to have a value at the beginning and end
             curr_size = ((curr_size - 1) // self.stride) + 1
 
-        assert curr_size > 0
         return curr_size
 
-
 class UpsamplingBlock(nn.Module):
-    def __init__(self, n_inputs, n_shortcut, n_outputs, kernel_size, stride):
+    def __init__(self, n_inputs, n_shortcut, n_outputs, kernel_size, stride, depth):
         super(UpsamplingBlock, self).__init__()
         assert(stride > 1)
+
         self.upconv = ConvLayer(n_inputs, n_inputs, kernel_size, stride, transpose=True)
-        self.pre_shortcut_convs = nn.ModuleList([ConvLayer(n_inputs, n_outputs, kernel_size, 1)])
-        self.post_shortcut_convs = nn.ModuleList([ConvLayer(n_outputs + n_shortcut, n_outputs, kernel_size, 1)])
+
+        self.pre_shortcut_convs = nn.ModuleList([ConvLayer(n_inputs, n_outputs, kernel_size, 1)] +
+                                                [ConvLayer(n_outputs, n_outputs, kernel_size, 1) for _ in range(depth - 1)])
+
+        self.post_shortcut_convs = nn.ModuleList([ConvLayer(n_outputs + n_shortcut, n_outputs, kernel_size, 1)] +
+                                                 [ConvLayer(n_outputs, n_outputs, kernel_size, 1) for _ in range(depth - 1)])
 
     def forward(self, x, shortcut):
         upsampled = self.upconv(x) # UPSAMPLE HIGH-LEVEL FEATURES
@@ -107,15 +110,21 @@ class UpsamplingBlock(nn.Module):
 
         return curr_size
 
-
 class DownsamplingBlock(nn.Module):
-    def __init__(self, n_inputs, n_shortcut, n_outputs, kernel_size, stride):
+    def __init__(self, n_inputs, n_shortcut, n_outputs, kernel_size, stride, depth):
         super(DownsamplingBlock, self).__init__()
         assert(stride > 1)
+
         self.kernel_size = kernel_size
         self.stride = stride
-        self.pre_shortcut_convs = nn.ModuleList([ConvLayer(n_inputs, n_shortcut, kernel_size, 1)])
-        self.post_shortcut_convs = nn.ModuleList([ConvLayer(n_shortcut, n_outputs, kernel_size, 1)])
+
+        self.pre_shortcut_convs = nn.ModuleList([ConvLayer(n_inputs, n_shortcut, kernel_size, 1)] +
+                                                [ConvLayer(n_shortcut, n_shortcut, kernel_size, 1) for _ in range(depth - 1)])
+
+        self.post_shortcut_convs = nn.ModuleList([ConvLayer(n_shortcut, n_outputs, kernel_size, 1)] +
+                                                 [ConvLayer(n_outputs, n_outputs, kernel_size, 1) for _ in
+                                                  range(depth - 1)])
+
         self.downconv = ConvLayer(n_outputs, n_outputs, kernel_size, stride)
 
     def forward(self, x):
@@ -139,16 +148,16 @@ class DownsamplingBlock(nn.Module):
 
         for conv in reversed(self.pre_shortcut_convs):
             curr_size = conv.get_input_size(curr_size)
-
         return curr_size
 
 
 class Waveunet(nn.Module):
-    def __init__(self, num_channels, kernel_size, target_output_size, strides=2):
+    def __init__(self, num_channels, kernel_size, target_output_size, depth=1, strides=2):
         super(Waveunet, self).__init__()
         self.num_levels = len(num_channels)
         self.strides = strides
         self.kernel_size = kernel_size
+        self.depth = depth
 
         assert (kernel_size % 2 == 1)
 
@@ -157,24 +166,25 @@ class Waveunet(nn.Module):
         for i in range(self.num_levels - 1):
             in_ch = 2 if i == 0 else num_channels[i]
             self.downsampling_blocks.append(
-                DownsamplingBlock(in_ch, num_channels[i], num_channels[i + 1], kernel_size, strides)
+                DownsamplingBlock(in_ch, num_channels[i], num_channels[i + 1],
+                                  kernel_size, strides, depth)
             )
 
         # Bottleneck
         self.bottlenecks = nn.ModuleList(
-            [ConvLayer(num_channels[-1], num_channels[-1], 1, 1) for _ in range(1)]
+            [ConvLayer(num_channels[-1], num_channels[-1], kernel_size, 1) for _ in range(depth)]
         )
 
         # Upsampling blocks
         self.upsampling_blocks = nn.ModuleList()
         for i in range(self.num_levels - 1):
             self.upsampling_blocks.append(
-                UpsamplingBlock(num_channels[-1 - i], num_channels[-2 - i], num_channels[-2 - i], kernel_size, strides)
+                UpsamplingBlock(num_channels[-1 - i], num_channels[-2 - i], num_channels[-2 - i],
+                                kernel_size, strides, depth)
             )
 
         # Output convolution
         self.output_conv = nn.Conv1d(num_channels[0], 1, 1)
-        self.final_transpose = nn.ConvTranspose1d(1, 1, kernel_size=5457, stride=1, padding=0)
 
         self.set_output_size(target_output_size)
 
@@ -200,12 +210,13 @@ class Waveunet(nn.Module):
     def check_padding_for_bottleneck(self, bottleneck, target_output_size):
         try:
             curr_size = bottleneck
-            for block in self.upsampling_blocks:
+
+            for block in self.upsampling_blocks: # Compute output size going forward through upsampling
                 curr_size = block.get_output_size(curr_size)
-            curr_size = (curr_size - 1) * 1 - 2 * 0 + 5457 + 0  # final transpose calculation
             output_size = curr_size
 
-            curr_size = bottleneck
+            curr_size = bottleneck # Compute input size going backward through bottleneck and downsampling
+
             for block in reversed(self.bottlenecks):
                 curr_size = block.get_input_size(curr_size)
             for block in reversed(self.downsampling_blocks):
@@ -222,15 +233,20 @@ class Waveunet(nn.Module):
 
         shortcuts = []
         out = x
+
         for block in self.downsampling_blocks:
             out, short = block(out)
             shortcuts.append(short)
+
         for conv in self.bottlenecks:
             out = conv(out)
+
         for idx, block in enumerate(self.upsampling_blocks):
             out = block(out, shortcuts[-1 - idx])
-        out = self.output_conv(out)
-        out = self.final_transpose(out)
+
+        out = self.output_conv(out) # Output
+
         if not self.training:
             out = out.clamp(min=-1.0, max=1.0)
+
         return out
