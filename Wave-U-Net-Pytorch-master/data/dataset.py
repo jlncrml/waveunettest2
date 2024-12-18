@@ -126,13 +126,13 @@ class SeparationDataset(Dataset):
 
         mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
         piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
-        targets = item["targets"][:, start_target_pos:start_target_pos + output_frames].astype(np.float32)
+        targets = item["targets"][:, start_pos:end_pos].astype(np.float32)
 
-        # Zero out everything outside the target range
-        zeroed_audio = np.zeros_like(mix_audio, dtype=np.float32)
-        zeroed_audio[:, output_start_frame:output_start_frame + output_frames] = mix_audio[:, output_start_frame:output_start_frame + output_frames]
+        # Zero out mix_audio outside the output range (LAST STEP)
+        mix_audio[:, :output_start_frame] = 0
+        mix_audio[:, output_end_frame:] = 0
 
-        audio = np.concatenate((zeroed_audio, piano_source_audio), axis=0)
+        audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
 
         if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)
