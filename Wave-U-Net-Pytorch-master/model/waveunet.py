@@ -173,7 +173,7 @@ class Waveunet(nn.Module):
 
         # Bottleneck
         self.bottlenecks = nn.ModuleList(
-            [ConvLayer(num_channels[-1], num_channels[-1], kernel_size, 1) for _ in range(depth)]
+            [ConvLayer(num_channels[-1], num_channels[-1], 1, 1) for _ in range(depth)]
         )
 
         # Upsampling blocks
