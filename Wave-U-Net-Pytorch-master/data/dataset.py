@@ -6,6 +6,7 @@ import os
 import numpy as np
 import glob
 from data.utils import load, write_wav
+import torch.nn.functional as F
 
 
 def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
@@ -17,7 +18,7 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
 
 
 class SeparationDataset(Dataset):
-    def __init__(self, dataset, partition, instruments, sr, channels, input_frames, output_frames, random_hops, audio_transform=None):
+    def __init__(self, dataset, partition, instruments, sr, channels, input_frames, output_frames, random_hops):
         super(SeparationDataset, self).__init__()
         self.random_hops = random_hops
         self.sr = sr
@@ -26,7 +27,6 @@ class SeparationDataset(Dataset):
         self.output_frames = output_frames
         self.output_frames_start = (input_frames - self.output_frames) // 2
         self.output_frames_end = (input_frames - self.output_frames) // 2 + self.output_frames
-        self.audio_transform = audio_transform
         self.instruments = instruments
         self.cutoff_freq = sr // 2 - 1000
 
@@ -80,9 +80,6 @@ class SeparationDataset(Dataset):
         return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        if self.length == 0:
-            raise IndexError("Cannot get item from an empty dataset.")
-
         audio_idx = self.start_pos.bisect_right(index)
         if audio_idx > 0:
             index = index - self.start_pos[audio_idx - 1]
@@ -97,25 +94,19 @@ class SeparationDataset(Dataset):
             start_target_pos = index * self.output_frames
 
         start_pos = start_target_pos - self.output_frames_start
-
-        pad_front = 0
-        if start_pos < 0:
-            pad_front = abs(start_pos)
-            start_pos = 0
-
         end_pos = start_target_pos - self.output_frames_start + self.input_frames
-        pad_back = 0
-        if end_pos > audio_length:
-            pad_back = end_pos - audio_length
-            end_pos = audio_length
 
-        mix_audio = item["mix"][start_pos:end_pos].astype(np.float32)
-        if pad_front > 0 or pad_back > 0:
-            mix_audio = np.pad(mix_audio, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
+        pad_front = max(-start_pos, 0)
+        start_pos = max(start_pos, 0)
 
-        piano_source_audio = item["piano_source"][start_pos:end_pos].astype(np.float32)
-        if pad_front > 0 or pad_back > 0:
-            piano_source_audio = np.pad(piano_source_audio, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
+        pad_back = max(end_pos - audio_length, 0)
+        end_pos = min(end_pos, audio_length)
+
+        mix_audio = torch.tensor(item["mix"][start_pos:end_pos].astype(np.float32))
+        mix_audio = F.pad(mix_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
+
+        piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
+        piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
         mix_audio[:self.output_frames_start] = 0
         mix_audio[self.output_frames_end:] = 0
@@ -123,22 +114,11 @@ class SeparationDataset(Dataset):
         piano_source_audio[:self.output_frames_start] = 0
         piano_source_audio[self.output_frames_end:] = 0
 
-        audio = torch.cat(
-            (
-                torch.tensor(mix_audio).unsqueeze(0).float(),
-                torch.tensor(piano_source_audio).unsqueeze(0).float()
-            ),
-            dim=0
-        )
+        audio = torch.cat((mix_audio.unsqueeze(0), piano_source_audio.unsqueeze(0)), dim=0)
 
-        targets_data = item["targets"][start_pos:end_pos].astype(np.float32)
-        if pad_front > 0 or pad_back > 0:
-            targets_data = np.pad(targets_data, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
-
+        targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
+        targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
-
-        if self.audio_transform is not None:
-            audio, targets = self.audio_transform(audio, targets)
 
         return audio, targets
 
