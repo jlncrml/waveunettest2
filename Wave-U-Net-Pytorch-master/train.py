@@ -36,8 +36,6 @@ def main(args):
                    [args.features*2**i for i in range(0, args.levels)]
     target_outputs = int(args.output_size * args.sr)
 
-    instrument = "voice"
-
     model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, strides=args.strides)
 
     print(model.shapes)
@@ -47,7 +45,6 @@ def main(args):
         model.cuda()
 
     dataset_data = get_dataset_folds(args.dataset_dir) # DATASET
-    augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
     train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True)
     val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False)

@@ -250,4 +250,4 @@ class Waveunet(nn.Module):
         if not self.training:
             out = out.clamp(min=-1.0, max=1.0)
 
-        return out
+        return torch.squeeze(out)
