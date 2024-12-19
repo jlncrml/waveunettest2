@@ -31,31 +31,6 @@ class LastSamplesMAELoss(nn.Module):
         return loss
 
 
-class WeightedLastSamplesMAELoss(nn.Module):
-    def __init__(self, n_samples=512):
-        super(WeightedLastSamplesMAELoss, self).__init__()
-        self.n_samples = n_samples
-        self.mae_loss = nn.L1Loss(reduction='none')  # Use reduction='none' to compute element-wise loss
-
-    def forward(self, output, target):
-        assert output.shape == target.shape, "Output and target must have the same shape."
-
-        # Split last n_samples and the rest
-        last_out = output[..., -self.n_samples:]
-        last_tgt = target[..., -self.n_samples:]
-
-        rest_out = output[..., :-self.n_samples]
-        rest_tgt = target[..., :-self.n_samples]
-
-        # Compute MAE for the last n_samples and the rest
-        last_loss = self.mae_loss(last_out, last_tgt).mean()  # Mean over the last n_samples
-        rest_loss = self.mae_loss(rest_out, rest_tgt).mean()  # Mean over the remaining samples
-
-        # Combine with equal weights
-        combined_loss = 0.33 * last_loss + 0.67 * rest_loss
-        return combined_loss
-
-
 def main(args):
     num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
                    [args.features*2**i for i in range(0, args.levels)]
@@ -80,7 +55,7 @@ def main(args):
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
-    criterion = WeightedLastSamplesMAELoss()
+    criterion = nn.L1Loss()
     filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=args.lr)

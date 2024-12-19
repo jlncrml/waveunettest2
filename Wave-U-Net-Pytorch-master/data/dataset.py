@@ -126,6 +126,9 @@ class SeparationDataset(Dataset):
         mix_audio[:, :self.shapes["output_start_frame"]] = 0
         mix_audio[:, self.shapes["output_end_frame"]:] = 0
 
+        piano_source_audio[:, :self.shapes["output_start_frame"]] = 0
+        piano_source_audio[:, self.shapes["output_end_frame"]:] = 0
+        
         audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
 
         targets_data = item["targets"][:, start_pos:end_pos].astype(np.float32)
