@@ -66,7 +66,7 @@ class SeparationDataset(Dataset):
                 "length": min_length,
             })
 
-        lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
+        lengths = [((d["length"] // self.output_frames) + 1) for d in self.data]
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
@@ -104,7 +104,7 @@ class SeparationDataset(Dataset):
 
         mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
         mix_audio = F.pad(mix_audio.unsqueeze(0), (mix_pad, mix_pad), 'constant', 0.0).squeeze(0)
-        
+
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
