@@ -1,3 +1,4 @@
+import torch
 from scipy.signal import butter, lfilter
 from sortedcontainers import SortedList
 from torch.utils.data import Dataset
@@ -32,39 +33,28 @@ class SeparationDataset(Dataset):
             raise ValueError(f"No data found for partition '{partition}'.")
 
         for example in dataset[partition]:
-            mix_audio, _ = load(example["mix"], mono=(self.channels == 1))
-            piano_source_audio, _ = load(example["piano_source"], mono=(self.channels == 1))
+            mix_audio, _ = load(example["mix"])
+            piano_source_audio, _ = load(example["piano_source"])
             source_audios = []
+
             for source in instruments:
-                source_audio, _ = load(example[source], mono=(self.channels == 1))
+                source_audio, _ = load(example[source])
                 source_audios.append(source_audio)
+
             source_audios = np.concatenate(source_audios, axis=0)
 
             mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
-            if self.sr == 24000:
-                mix_audio = mix_audio[:, ::2]
-                piano_source_audio = piano_source_audio[:, ::2]
-                source_audios = source_audios[:, ::2]
-            elif self.sr == 16000:
-                mix_audio = mix_audio[:, ::3]
-                piano_source_audio = piano_source_audio[:, ::3]
-                source_audios = source_audios[:, ::3]
-            elif self.sr == 12000:
-                mix_audio = mix_audio[:, ::4]
-                piano_source_audio = piano_source_audio[:, ::4]
-                source_audios = source_audios[:, ::4]
-            elif self.sr == 6000:
-                mix_audio = mix_audio[:, ::8]
-                piano_source_audio = piano_source_audio[:, ::8]
-                source_audios = source_audios[:, ::8]
+            mix_audio = mix_audio[::4]
+            piano_source_audio = piano_source_audio[::4]
+            source_audios = source_audios[::4]
 
-            min_length = min(mix_audio.shape[1], piano_source_audio.shape[1], source_audios.shape[1])
-            mix_audio = mix_audio[:, :min_length]
-            piano_source_audio = piano_source_audio[:, :min_length]
-            source_audios = source_audios[:, :min_length]
+            min_length = min(mix_audio.shape[0], piano_source_audio.shape[0], source_audios.shape[0])
+            mix_audio = mix_audio[:min_length]
+            piano_source_audio = piano_source_audio[:min_length]
+            source_audios = source_audios[:min_length]
 
             self.data.append({
                 "mix": mix_audio,
@@ -104,6 +94,7 @@ class SeparationDataset(Dataset):
             start_target_pos = index * self.shapes["output_frames"]
 
         start_pos = start_target_pos - self.shapes["output_start_frame"]
+
         pad_front = 0
         if start_pos < 0:
             pad_front = abs(start_pos)
@@ -115,27 +106,33 @@ class SeparationDataset(Dataset):
             pad_back = end_pos - audio_length
             end_pos = audio_length
 
-        mix_audio = item["mix"][:, start_pos:end_pos].astype(np.float32)
+        mix_audio = item["mix"][start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            mix_audio = np.pad(mix_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            mix_audio = np.pad(mix_audio, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        piano_source_audio = item["piano_source"][:, start_pos:end_pos].astype(np.float32)
+        piano_source_audio = item["piano_source"][start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            piano_source_audio = np.pad(piano_source_audio, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            piano_source_audio = np.pad(piano_source_audio, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        mix_audio[:, :self.shapes["output_start_frame"]] = 0
-        mix_audio[:, self.shapes["output_end_frame"]:] = 0
+        mix_audio[:self.shapes["output_start_frame"]] = 0
+        mix_audio[self.shapes["output_end_frame"]:] = 0
 
-        piano_source_audio[:, :self.shapes["output_start_frame"]] = 0
-        piano_source_audio[:, self.shapes["output_end_frame"]:] = 0
-        
-        audio = np.concatenate((mix_audio, piano_source_audio), axis=0)
+        piano_source_audio[:self.shapes["output_start_frame"]] = 0
+        piano_source_audio[self.shapes["output_end_frame"]:] = 0
 
-        targets_data = item["targets"][:, start_pos:end_pos].astype(np.float32)
+        audio = torch.cat(
+            (
+                torch.tensor(mix_audio).unsqueeze(0).float(),
+                torch.tensor(piano_source_audio).unsqueeze(0).float()
+            ),
+            dim=0
+        )
+
+        targets_data = item["targets"][start_pos:end_pos].astype(np.float32)
         if pad_front > 0 or pad_back > 0:
-            targets_data = np.pad(targets_data, [(0, 0), (pad_front, pad_back)], mode="constant", constant_values=0.0)
+            targets_data = np.pad(targets_data, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        targets = targets_data
+        targets = targets_data[self.shapes["output_start_frame"]:self.shapes["output_end_frame"]]
 
         if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)

@@ -9,7 +9,7 @@ import model.utils as model_utils
 import utils
 from data.dataset import SeparationDataset, get_dataset
 from data.dataset import get_dataset_folds
-from data.utils import crop_targets, random_amplify
+from data.utils import random_amplify
 from model.waveunet import Waveunet
 import torch
 import torch.nn as nn
@@ -47,11 +47,10 @@ def main(args):
         model.cuda()
 
     dataset_data = get_dataset_folds(args.dataset_dir) # DATASET
-    crop_func = partial(crop_targets, shapes=model.shapes)
     augment_func = partial(random_amplify, shapes=model.shapes, min=0.7, max=1.0)
 
-    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True, audio_transform=augment_func)
-    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False, audio_transform=crop_func)
+    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True)
+    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False)
 
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
 
