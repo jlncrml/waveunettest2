@@ -36,8 +36,6 @@ def main(args):
 
     model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, strides=args.strides)
 
-    print(model.shapes)
-
     if args.cuda:
         model = model_utils.DataParallel(model)
         model.cuda()

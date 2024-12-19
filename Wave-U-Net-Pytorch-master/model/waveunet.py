@@ -110,8 +110,6 @@ class DownsamplingBlock(nn.Module):
 
 
 class Waveunet(nn.Module):
-
-
     def __init__(self, num_channels, kernel_size, target_output_size, strides=2):
         super(Waveunet, self).__init__()
         self.num_levels = len(num_channels)
@@ -145,18 +143,10 @@ class Waveunet(nn.Module):
     def set_output_size(self, target_output_size):
         self.target_output_size = target_output_size
         self.input_size, self.output_size = self.check_padding(target_output_size)
-
         assert ((self.input_size - self.output_size) % 2 == 0)
-
         self.input_frames = self.input_size
         self.output_frames = self.output_size
 
-        # self.shapes = {
-        #     "output_start_frame": (self.input_size - self.output_size) // 2,
-        #     "output_end_frame": (self.input_size - self.output_size) // 2 + self.output_size,
-        #     "output_frames":
-        #     "input_frames":
-        # }
 
     def check_padding(self, target_output_size):
         bottleneck = 1
