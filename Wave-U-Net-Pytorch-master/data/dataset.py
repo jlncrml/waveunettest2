@@ -17,12 +17,15 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
 
 
 class SeparationDataset(Dataset):
-    def __init__(self, dataset, partition, instruments, sr, channels, shapes, random_hops, audio_transform=None):
+    def __init__(self, dataset, partition, instruments, sr, channels, input_frames, output_frames, random_hops, audio_transform=None):
         super(SeparationDataset, self).__init__()
         self.random_hops = random_hops
         self.sr = sr
         self.channels = channels
-        self.shapes = shapes
+        self.input_frames = input_frames
+        self.output_frames = output_frames
+        self.output_frames_start = (input_frames - self.output_frames) // 2
+        self.output_frames_end = (input_frames - self.output_frames) // 2 + self.output_frames
         self.audio_transform = audio_transform
         self.instruments = instruments
         self.cutoff_freq = sr // 2 - 1000
@@ -64,7 +67,7 @@ class SeparationDataset(Dataset):
                 "target_length": min_length
             })
 
-        lengths = [((d["target_length"] // self.shapes["output_frames"]) + 1) for d in self.data]
+        lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
@@ -89,18 +92,18 @@ class SeparationDataset(Dataset):
         target_length = item["target_length"]
 
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(target_length - self.shapes["output_frames"] + 1, 1))
+            start_target_pos = np.random.randint(0, max(target_length - self.output_frames + 1, 1))
         else:
-            start_target_pos = index * self.shapes["output_frames"]
+            start_target_pos = index * self.output_frames
 
-        start_pos = start_target_pos - self.shapes["output_start_frame"]
+        start_pos = start_target_pos - self.output_frames_start
 
         pad_front = 0
         if start_pos < 0:
             pad_front = abs(start_pos)
             start_pos = 0
 
-        end_pos = start_target_pos - self.shapes["output_start_frame"] + self.shapes["input_frames"]
+        end_pos = start_target_pos - self.output_frames_start + self.input_frames
         pad_back = 0
         if end_pos > audio_length:
             pad_back = end_pos - audio_length
@@ -114,11 +117,11 @@ class SeparationDataset(Dataset):
         if pad_front > 0 or pad_back > 0:
             piano_source_audio = np.pad(piano_source_audio, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        mix_audio[:self.shapes["output_start_frame"]] = 0
-        mix_audio[self.shapes["output_end_frame"]:] = 0
+        mix_audio[:self.output_frames_start] = 0
+        mix_audio[self.output_frames_end:] = 0
 
-        piano_source_audio[:self.shapes["output_start_frame"]] = 0
-        piano_source_audio[self.shapes["output_end_frame"]:] = 0
+        piano_source_audio[:self.output_frames_start] = 0
+        piano_source_audio[self.output_frames_end:] = 0
 
         audio = torch.cat(
             (
@@ -132,7 +135,7 @@ class SeparationDataset(Dataset):
         if pad_front > 0 or pad_back > 0:
             targets_data = np.pad(targets_data, [(pad_front, pad_back)], mode="constant", constant_values=0.0)
 
-        targets = targets_data[self.shapes["output_start_frame"]:self.shapes["output_end_frame"]]
+        targets = targets_data[self.output_frames_start:self.output_frames_end]
 
         if self.audio_transform is not None:
             audio, targets = self.audio_transform(audio, targets)

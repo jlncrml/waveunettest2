@@ -4,23 +4,10 @@ from torch.nn import functional as F
 
 
 def center_crop(x, target):
-    if x is None:
-        return None
-    if target is None:
-        return x
-
-    target_shape = target.shape
-    diff = x.shape[-1] - target_shape[-1]
-
-    assert (diff % 2 == 0)
-    crop = diff // 2
-
-    if crop == 0:
-        return x
-    if crop < 0:
-        raise ArithmeticError
-
-    return x[:, :, crop:-crop].contiguous()
+    if x is None or target is None: return x
+    difference = (x.shape[-1] - target.shape[-1]) // 2
+    if difference < 0: raise ArithmeticError
+    return x if difference == 0 else x[..., difference:-difference].contiguous()
 
 
 class ConvLayer(nn.Module):
@@ -55,7 +42,9 @@ class ConvLayer(nn.Module):
         if self.transpose:
             assert ((curr_size - 1) % self.stride == 0) # We need to have a value at the beginning and end
             curr_size = ((curr_size - 1) // self.stride) + 1
+
         assert(curr_size > 0)
+
         return curr_size
 
     def get_output_size(self, input_size):
@@ -69,6 +58,7 @@ class ConvLayer(nn.Module):
             curr_size = ((curr_size - 1) // self.stride) + 1
 
         assert curr_size > 0
+
         return curr_size
 
 
@@ -120,6 +110,8 @@ class DownsamplingBlock(nn.Module):
 
 
 class Waveunet(nn.Module):
+
+
     def __init__(self, num_channels, kernel_size, target_output_size, strides=2):
         super(Waveunet, self).__init__()
         self.num_levels = len(num_channels)
@@ -132,6 +124,7 @@ class Waveunet(nn.Module):
 
         for i in range(self.num_levels - 1):
             in_ch = 2 if i == 0 else num_channels[i]
+
             self.downsampling_blocks.append(
                 DownsamplingBlock(in_ch, num_channels[i], num_channels[i + 1],kernel_size, strides)
             )
@@ -152,20 +145,28 @@ class Waveunet(nn.Module):
     def set_output_size(self, target_output_size):
         self.target_output_size = target_output_size
         self.input_size, self.output_size = self.check_padding(target_output_size)
+
         assert ((self.input_size - self.output_size) % 2 == 0)
-        self.shapes = {
-            "output_start_frame": (self.input_size - self.output_size) // 2,
-            "output_end_frame": (self.input_size - self.output_size) // 2 + self.output_size,
-            "output_frames": self.output_size,
-            "input_frames": self.input_size
-        }
+
+        self.input_frames = self.input_size
+        self.output_frames = self.output_size
+
+        # self.shapes = {
+        #     "output_start_frame": (self.input_size - self.output_size) // 2,
+        #     "output_end_frame": (self.input_size - self.output_size) // 2 + self.output_size,
+        #     "output_frames":
+        #     "input_frames":
+        # }
 
     def check_padding(self, target_output_size):
         bottleneck = 1
+
         while True:
             out = self.check_padding_for_bottleneck(bottleneck, target_output_size)
+
             if out is not False:
                 return out
+
             bottleneck += 1
 
     def check_padding_for_bottleneck(self, bottleneck, target_output_size):
@@ -178,14 +179,15 @@ class Waveunet(nn.Module):
             output_size = curr_size
 
             curr_size = bottleneck # Compute input size going backward through bottleneck and downsampling
-
             curr_size = self.bottleneck.get_input_size(curr_size)
 
             for block in reversed(self.downsampling_blocks):
                 curr_size = block.get_input_size(curr_size)
 
             assert output_size >= target_output_size
+
             return curr_size, output_size
+
         except AssertionError:
             return False
 

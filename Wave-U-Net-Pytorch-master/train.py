@@ -1,7 +1,6 @@
 import argparse
 import os
 import time
-from functools import partial
 import numpy as np
 from torch.optim import Adam
 from tqdm import tqdm
@@ -9,7 +8,6 @@ import model.utils as model_utils
 import utils
 from data.dataset import SeparationDataset, get_dataset
 from data.dataset import get_dataset_folds
-from data.utils import random_amplify
 from model.waveunet import Waveunet
 import torch
 import torch.nn as nn
@@ -44,12 +42,37 @@ def main(args):
         model = model_utils.DataParallel(model)
         model.cuda()
 
-    dataset_data = get_dataset_folds(args.dataset_dir) # DATASET
+    dataset_data = get_dataset_folds(args.dataset_dir)
 
-    train_data = SeparationDataset(dataset_data, "train", ["voice"], args.sr, 1, model.shapes, True)
-    val_data = SeparationDataset(dataset_data, "val", ["voice"], args.sr, 1, model.shapes, False)
+    train_data = SeparationDataset(
+        dataset_data,
+        "train",
+        ["voice"],
+        args.sr,
+        1,
+        model.input_frames,
+        model.output_frames,
+        True
+    )
 
-    dataloader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, worker_init_fn=utils.worker_init_fn)
+    val_data = SeparationDataset(
+        dataset_data,
+        "val",
+        ["voice"],
+        args.sr,
+        1,
+        model.input_frames,
+        model.output_frames,
+        False
+    )
+
+    dataloader = torch.utils.data.DataLoader(
+        train_data,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        worker_init_fn=utils.worker_init_fn
+    )
 
     criterion = nn.L1Loss()
     filtered_criterion = LastSamplesMAELoss()
