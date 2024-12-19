@@ -52,7 +52,7 @@ class WeightedLastSamplesMAELoss(nn.Module):
         rest_loss = self.mae_loss(rest_out, rest_tgt).mean()  # Mean over the remaining samples
 
         # Combine with equal weights
-        combined_loss = 0.5 * last_loss + 0.5 * rest_loss
+        combined_loss = 0.33 * last_loss + 0.67 * rest_loss
         return combined_loss
 
 
