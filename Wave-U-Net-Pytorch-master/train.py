@@ -174,12 +174,13 @@ def validate(args, model, criterion1, criterion2, test_data):
     total_loss2 = 0.0
 
     with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
-        for example_num, (x, target) in enumerate(dataloader):
+        for example_num, (mix_waveform, piano_source_waveform, targets) in enumerate(dataloader):
             if args.cuda:
-                x = x.cuda()
+                mix_waveform = mix_waveform.cuda()
+                piano_source_waveform = piano_source_waveform.cuda()
                 target = target.cuda()
 
-            out = model(x)
+            out = model(mix_waveform, piano_source_waveform)
 
             loss1 = criterion1(out, target)
             loss1_val = loss1.item()
