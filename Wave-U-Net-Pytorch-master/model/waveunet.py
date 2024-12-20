@@ -119,16 +119,15 @@ class Waveunet(nn.Module):
 
     def simulate_forward(self, input_size, target_output_size):
         try:
-            # Move tensors to GPU if available
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            mix_audio = torch.zeros(1, input_size).to(device)
-            piano_source_audio = torch.zeros(1, input_size).to(device)
+            mix_audio = torch.zeros(1, input_size).cuda() if torch.cuda.is_available() else torch.zeros(1, input_size)
+            piano_source_audio = torch.zeros(1, input_size).cuda() if torch.cuda.is_available() else torch.zeros(1,
+                                                                                                                 input_size)
 
             # Forward pass
             output = self.forward(mix_audio, piano_source_audio)
             output_size = output.shape[-1]
 
-            print(output_size)
+            print(f"Output size for input size {input_size}: {output_size}")
 
             assert output_size >= target_output_size
             return input_size, output_size
