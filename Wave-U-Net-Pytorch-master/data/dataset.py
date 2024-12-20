@@ -109,6 +109,9 @@ class SeparationDataset(Dataset):
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
 
+        print(mix_audio.shape)
+        print(piano_source_audio.shape)
+
         return mix_audio, piano_source_audio, targets
 
     def __getstate__(self):
