@@ -119,9 +119,8 @@ class Waveunet(nn.Module):
 
     def simulate_forward(self, input_size, target_output_size):
         try:
-            mix_audio = torch.zeros(1, input_size).cuda() if torch.cuda.is_available() else torch.zeros(1, input_size)
-            piano_source_audio = torch.zeros(1, input_size).cuda() if torch.cuda.is_available() else torch.zeros(1,
-                                                                                                                 input_size)
+            mix_audio = torch.zeros(1, input_size)
+            piano_source_audio = torch.zeros(1, input_size)
 
             # Forward pass
             output = self.forward(mix_audio, piano_source_audio)
