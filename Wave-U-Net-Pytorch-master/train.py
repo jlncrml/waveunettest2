@@ -202,7 +202,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cuda', action='store_true')
-    parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--features', type=int, default=32)
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
     parser.add_argument('--hdf_dir', type=str, default="hdf")
