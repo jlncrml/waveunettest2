@@ -32,7 +32,7 @@ class LastSamplesMAELoss(nn.Module):
 
 def custom_collate_fn(batch):
     mix_waveforms, piano_source_waveforms, targets = zip(*batch)
-
+    print("Batch sizes:", [m.shape for m in mix_waveforms])
     # Stack tensors for each input type
     mix_waveforms = torch.stack([torch.as_tensor(mix) for mix in mix_waveforms])
     piano_source_waveforms = torch.stack([torch.as_tensor(piano) for piano in piano_source_waveforms])
