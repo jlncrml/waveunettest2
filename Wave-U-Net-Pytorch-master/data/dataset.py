@@ -65,6 +65,7 @@ class SeparationDataset(Dataset):
                 "piano_source": piano_source_audio,
                 "targets": source_audios,
                 "length": min_length,
+                "target_length": min_length
             })
 
         lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
@@ -86,9 +87,10 @@ class SeparationDataset(Dataset):
 
         item = self.data[audio_idx]
         audio_length = item["length"]
+        target_length = item["target_length"]
 
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(audio_length - self.output_frames + 1, 1))
+            start_target_pos = np.random.randint(0, max(target_length - self.output_frames + 1, 1))
         else:
             start_target_pos = index * self.output_frames
 
@@ -97,14 +99,12 @@ class SeparationDataset(Dataset):
 
         pad_front = max(-start_pos, 0)
         start_pos = max(start_pos, 0)
+
         pad_back = max(end_pos - audio_length, 0)
         end_pos = min(end_pos, audio_length)
 
-        mix_end_pos = start_target_pos + self.input_frames
-        mix_pad = self.output_frames - self.input_frames // 2
-
-        mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
-        mix_audio = F.pad(mix_audio.unsqueeze(0), (mix_pad, mix_pad), 'constant', 0.0).squeeze(0)
+        mix_audio = torch.tensor(item["mix"][start_pos:end_pos].astype(np.float32))
+        mix_audio = F.pad(mix_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
