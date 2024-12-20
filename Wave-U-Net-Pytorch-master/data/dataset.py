@@ -69,26 +69,17 @@ class SeparationDataset(Dataset):
             })
 
         lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
-
-        # Create snippet_mapping
+        
         self.snippet_mapping = [
             (file_idx, snippet_idx)
             for file_idx, file in enumerate(self.data)
             for snippet_idx in range(lengths[file_idx])
         ]
 
-        # Ensure snippet_mapping aligns with the total number of snippets
-        assert len(self.snippet_mapping) == sum(lengths), "Snippet mapping mismatch"
-
-        if lengths:
-            self.start_pos = SortedList(np.cumsum(lengths))
-            self.length = self.start_pos[-1]
-        else:
-            self.start_pos = SortedList()
-            self.length = 0
+        self.length = len(self.snippet_mapping)
 
     def __len__(self):
-        return min(self.length if hasattr(self, 'length') else 0, 10000)
+        return self.length
 
     def __getitem__(self, index):
         file_idx, snippet_idx = self.snippet_mapping[index]
