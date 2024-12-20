@@ -30,17 +30,6 @@ class LastSamplesMAELoss(nn.Module):
         return loss
 
 
-def custom_collate_fn(batch):
-    mix_waveforms, piano_source_waveforms, targets = zip(*batch)
-    print("Batch sizes:", [m.shape for m in mix_waveforms])
-    # Stack tensors for each input type
-    mix_waveforms = torch.stack([torch.as_tensor(mix) for mix in mix_waveforms])
-    piano_source_waveforms = torch.stack([torch.as_tensor(piano) for piano in piano_source_waveforms])
-    targets = torch.stack([torch.as_tensor(target) for target in targets])
-
-    return mix_waveforms, piano_source_waveforms, targets
-
-
 def main(args):
     num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
                    [args.features*2**i for i in range(0, args.levels)]
@@ -81,8 +70,7 @@ def main(args):
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
-        worker_init_fn=utils.worker_init_fn,
-        collate_fn=custom_collate_fn
+        worker_init_fn=utils.worker_init_fn
     )
 
     criterion = nn.L1Loss()
