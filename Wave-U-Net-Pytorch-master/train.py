@@ -32,8 +32,22 @@ class LastSamplesMAELoss(nn.Module):
 
 def custom_collate_fn(batch):
     mix_waveforms, piano_source_waveforms, targets = zip(*batch)
-    print("Batch sizes:", [m.shape for m in mix_waveforms])
-    # Stack tensors for each input type
+
+    # Debugging tensor sizes
+    mix_lengths = [mix.shape[0] for mix in mix_waveforms]
+    piano_lengths = [piano.shape[0] for piano in piano_source_waveforms]
+    target_lengths = [target.shape[0] for target in targets]
+
+    print("Mix waveform lengths in batch:", mix_lengths)
+    print("Piano source lengths in batch:", piano_lengths)
+    print("Target lengths in batch:", target_lengths)
+
+    # Verify consistency within each input type
+    assert all(length == mix_lengths[0] for length in mix_lengths), "Inconsistent mix_waveform lengths in batch!"
+    assert all(length == piano_lengths[0] for length in piano_lengths), "Inconsistent piano_source_waveform lengths in batch!"
+    assert all(length == target_lengths[0] for length in target_lengths), "Inconsistent target lengths in batch!"
+
+    # Stack tensors if all lengths are consistent
     mix_waveforms = torch.stack([torch.as_tensor(mix) for mix in mix_waveforms])
     piano_source_waveforms = torch.stack([torch.as_tensor(piano) for piano in piano_source_waveforms])
     targets = torch.stack([torch.as_tensor(target) for target in targets])
@@ -202,7 +216,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cuda', action='store_true')
-    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--features', type=int, default=32)
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
     parser.add_argument('--hdf_dir', type=str, default="hdf")

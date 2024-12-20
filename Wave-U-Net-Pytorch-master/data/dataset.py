@@ -18,6 +18,12 @@ def butter_lowpass_filter(data, cutoff_freq, sr, order=6):
     return filtered
 
 
+from torch.utils.data import Dataset
+from sortedcontainers import SortedList  # Ensure this is imported
+import torch
+import torch.nn.functional as F
+import numpy as np
+
 class SeparationDataset(Dataset):
     def __init__(self, dataset, partition, instruments, sr, channels, input_frames, output_frames, random_hops):
         super(SeparationDataset, self).__init__()
@@ -27,7 +33,7 @@ class SeparationDataset(Dataset):
         self.input_frames = input_frames
         self.output_frames = output_frames
         self.output_frames_start = (input_frames - self.output_frames) // 2
-        self.output_frames_end = (input_frames - self.output_frames) // 2 + self.output_frames
+        self.output_frames_end = self.output_frames_start + self.output_frames
         self.instruments = instruments
         self.cutoff_freq = sr // 2 - 1000
 
@@ -47,32 +53,34 @@ class SeparationDataset(Dataset):
 
             source_audios = np.concatenate(source_audios, axis=0)
 
+            # Apply filters
             mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
+            # Downsample
             mix_audio = mix_audio[::4]
             piano_source_audio = piano_source_audio[::4]
             source_audios = source_audios[::4]
 
+            # Trim to minimum length
             min_length = min(mix_audio.shape[0], piano_source_audio.shape[0], source_audios.shape[0])
-            mix_audio = mix_audio[:min_length]
-            piano_source_audio = piano_source_audio[:min_length]
-            source_audios = source_audios[:min_length]
 
-            self.data.append({
-                "mix": mix_audio,
-                "piano_source": piano_source_audio,
-                "targets": source_audios,
-                "length": min_length,
-            })
+            # Only include samples with sufficient length
+            if min_length >= self.output_frames:
+                mix_audio = mix_audio[:min_length]
+                piano_source_audio = piano_source_audio[:min_length]
+                source_audios = source_audios[:min_length]
 
-        lengths = []
-        for d in self.data:
-            if d["length"] < self.output_frames:
-                lengths.append(0)  # No valid segments
-            else:
-                lengths.append((d["length"] // self.output_frames) + 1)
+                self.data.append({
+                    "mix": mix_audio,
+                    "piano_source": piano_source_audio,
+                    "targets": source_audios,
+                    "length": min_length,
+                })
+
+        # Calculate valid lengths
+        lengths = [d["length"] // self.output_frames for d in self.data]
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
@@ -92,12 +100,13 @@ class SeparationDataset(Dataset):
         item = self.data[audio_idx]
         audio_length = item["length"]
 
-        print(audio_length)
+        # Debugging
+        print(f"Audio Length: {audio_length}")
         if audio_length < self.output_frames:
             print("------------------------------------------------------------------------------------")
 
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(audio_length - self.output_frames + 1, 1))
+            start_target_pos = np.random.randint(0, audio_length - self.output_frames + 1)
         else:
             start_target_pos = index * self.output_frames
 
