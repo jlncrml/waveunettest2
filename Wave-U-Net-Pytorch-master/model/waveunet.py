@@ -109,6 +109,7 @@ class Waveunet(nn.Module):
         input_size = target_output_size
 
         while True:
+            print(f"Testing {input_size}")
             result = self.simulate_forward(input_size, target_output_size)
 
             if result is not False:
@@ -126,6 +127,8 @@ class Waveunet(nn.Module):
             # Forward pass
             output = self.forward(mix_audio, piano_source_audio)
             output_size = output.shape[-1]
+
+            print(output_size)
 
             assert output_size >= target_output_size
             return input_size, output_size
