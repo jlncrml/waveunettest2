@@ -181,7 +181,12 @@ class Waveunet(nn.Module):
         except AssertionError:
             return False
 
-    def forward(self, x):
+    def forward(self, mix_waveform, piano_source_waveform):
+        mix_pad = (self.input_frames - self.output_frames) // 2
+        padded_mix_waveform = F.pad(mix_waveform, (mix_pad, mix_pad), 'constant', 0.0).squeeze(0)
+
+        x = torch.cat((padded_mix_waveform.unsqueeze(1), piano_source_waveform.unsqueeze(1)), dim=1)
+
         curr_input_size = x.shape[-1]
 
         assert (curr_input_size == self.input_size)

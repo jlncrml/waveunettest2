@@ -90,9 +90,10 @@ def main(args):
 
         with tqdm(total=len(train_data) // args.batch_size) as pbar:
             np.random.seed()
-            for example_num, (x, targets) in enumerate(dataloader):
+            for example_num, (mix_waveform, piano_source_waveform, targets) in enumerate(dataloader):
                 if args.cuda:
-                    x = x.cuda()
+                    mix_waveform = mix_waveform.cuda()
+                    piano_source_waveform = piano_source_waveform.cuda()
                     targets = targets.cuda()
 
                 t = time.time()
@@ -108,7 +109,7 @@ def main(args):
 
                 optimizer.zero_grad() # Zero gradients
 
-                out = model(x) # Forward pass
+                out = model(mix_waveform, piano_source_waveform) # Forward pass
 
                 loss = criterion(out, targets) # Compute loss
 
