@@ -62,7 +62,7 @@ def main(args):
         1,
         model.input_frames,
         model.output_frames,
-        True
+        False
     )
 
     dataloader = torch.utils.data.DataLoader(
@@ -91,10 +91,9 @@ def main(args):
 
         with tqdm(total=len(train_data) // args.batch_size) as pbar:
             np.random.seed()
-            for example_num, (mix_waveform, piano_source_waveform, targets) in enumerate(dataloader):
+            for example_num, (audio, targets) in enumerate(dataloader):
                 if args.cuda:
-                    mix_waveform = mix_waveform.cuda()
-                    piano_source_waveform = piano_source_waveform.cuda()
+                    audio = audio.cuda()
                     targets = targets.cuda()
 
                 t = time.time()
@@ -111,7 +110,7 @@ def main(args):
                 optimizer.zero_grad()  # Zero gradients
 
                 # Forward pass with two inputs
-                out = model(mix_waveform, piano_source_waveform)
+                out = model(audio)
 
                 # Compute loss
                 loss = criterion(out, targets)
@@ -162,13 +161,12 @@ def validate(args, model, criterion1, criterion2, test_data):
     total_loss2 = 0.0
 
     with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
-        for example_num, (mix_waveform, piano_source_waveform, target) in enumerate(dataloader):
+        for example_num, (audio, target) in enumerate(dataloader):
             if args.cuda:
-                mix_waveform = mix_waveform.cuda()
-                piano_source_waveform = piano_source_waveform.cuda()
+                audio = audio.cuda()
                 target = target.cuda()
 
-            out = model(mix_waveform, piano_source_waveform)
+            out = model(audio)
 
             loss1 = criterion1(out, target)
             loss1_val = loss1.item()
