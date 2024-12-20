@@ -62,7 +62,7 @@ def main(args):
         1,
         model.input_frames,
         model.output_frames,
-        False
+        True
     )
 
     dataloader = torch.utils.data.DataLoader(
