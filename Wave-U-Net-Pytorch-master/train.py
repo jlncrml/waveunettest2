@@ -136,18 +136,14 @@ def main(args):
 
                 optimizer.zero_grad()  # Zero gradients
 
-                # Forward pass with two inputs
-                out = model(mix_waveform, piano_source_waveform)
+                out = model(mix_waveform, piano_source_waveform)  # Forward pass
 
-                # Compute loss
-                loss = criterion(out, targets)
+                loss = criterion(out, targets)  # Compute loss
 
-                # Backward pass and optimization
-                loss.backward()
+                loss.backward()  # Backward pass and optimization
                 optimizer.step()
 
-                # Update loss tracking
-                avg_loss = loss.item()
+                avg_loss = loss.item()  # Record loss
                 state["step"] += 1
 
                 t = time.time() - t  # Timing
@@ -155,8 +151,7 @@ def main(args):
 
                 pbar.update(1)
 
-
-        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
+        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data)  # VALIDATE
         print("VALIDATION FINISHED: LOSS: " + str(val_loss) + "LAST 2048 LOSS: " + str(last_val_loss))
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
