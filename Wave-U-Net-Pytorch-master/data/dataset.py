@@ -102,14 +102,18 @@ class SeparationDataset(Dataset):
 
         item = self.data[audio_idx]
         audio_length = item["length"]
-        target_length = item["target_length"]
 
         if self.random_hops:
-            max_start = max(target_length - self.output_frames + 1, 1)
+            max_start = max(audio_length - self.output_frames + 1, 1)
             start_target_pos = np.random.randint(0, max_start)
         else:
             start_target_pos = index * self.output_frames
 
+        # Mix audio: slice to `output_frames`
+        mix_end_pos = start_target_pos + self.output_frames
+        mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
+
+        # Piano source: slice to `input_frames`
         start_pos = start_target_pos - self.output_frames_start
         end_pos = start_target_pos - self.output_frames_start + self.input_frames
 
@@ -119,20 +123,10 @@ class SeparationDataset(Dataset):
         pad_back = max(end_pos - audio_length, 0)
         end_pos = min(end_pos, audio_length)
 
-        # Slice and ensure mix_audio is exactly output_frames in size
-        mix_end_pos = start_target_pos + self.output_frames
-        mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
-
-        # If mix_audio is too short, pad it to output_frames
-        if mix_audio.size(0) < self.output_frames:
-            pad_size = self.output_frames - mix_audio.size(0)
-            mix_audio = F.pad(mix_audio, (0, pad_size), 'constant', 0.0)
-
-        # Slice and pad piano_source_audio
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
-        # Slice and pad targets
+        # Targets: slice and pad as required
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
