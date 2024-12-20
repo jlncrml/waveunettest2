@@ -162,7 +162,7 @@ def validate(args, model, criterion1, criterion2, test_data):
     total_loss2 = 0.0
 
     with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
-        for example_num, (mix,_audio, piano_source_audio, target) in enumerate(dataloader):
+        for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
             if args.cuda:
                 mix_audio = mix_audio.cuda()
                 piano_source_audio = piano_source_audio.cuda()
