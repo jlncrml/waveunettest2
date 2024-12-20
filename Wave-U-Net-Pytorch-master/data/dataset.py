@@ -42,6 +42,8 @@ class SeparationDataset(Dataset):
         if num_examples == 0:
             raise ValueError(f"No data found for partition '{partition}'.")
 
+        excluded_samples = 0  # Counter for excluded samples
+
         for example in dataset[partition]:
             mix_audio, _ = load(example["mix"])
             piano_source_audio, _ = load(example["piano_source"])
@@ -53,16 +55,20 @@ class SeparationDataset(Dataset):
 
             source_audios = np.concatenate(source_audios, axis=0)
 
+            # Apply filters
             mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
+            # Downsample
             mix_audio = mix_audio[::4]
             piano_source_audio = piano_source_audio[::4]
             source_audios = source_audios[::4]
 
+            # Trim to minimum length
             min_length = min(mix_audio.shape[0], piano_source_audio.shape[0], source_audios.shape[0])
 
+            # Only include samples with sufficient length
             if min_length >= self.output_frames:
                 mix_audio = mix_audio[:min_length]
                 piano_source_audio = piano_source_audio[:min_length]
@@ -75,8 +81,10 @@ class SeparationDataset(Dataset):
                     "length": min_length,
                 })
             else:
-                print("NOT LONG ENOUGH")
+                excluded_samples += 1
+                print(f"Excluded sample with min_length={min_length} < output_frames={self.output_frames}")
 
+        # Calculate lengths only for valid samples
         lengths = [d["length"] // self.output_frames for d in self.data]
 
         if lengths:
@@ -86,41 +94,7 @@ class SeparationDataset(Dataset):
             self.start_pos = SortedList()
             self.length = 0
 
-    def __len__(self):
-        return min(self.length if hasattr(self, 'length') else 0, 10000)
-
-    def __getitem__(self, index):
-        audio_idx = self.start_pos.bisect_right(index)
-        if audio_idx > 0:
-            index = index - self.start_pos[audio_idx - 1]
-
-        item = self.data[audio_idx]
-        audio_length = item["length"]
-
-        if self.random_hops:
-            start_target_pos = np.random.randint(0, audio_length - self.output_frames + 1)
-        else:
-            start_target_pos = index * self.output_frames
-
-        start_pos = start_target_pos - self.output_frames_start
-        end_pos = start_target_pos - self.output_frames_start + self.input_frames
-
-        pad_front = max(-start_pos, 0)
-        start_pos = max(start_pos, 0)
-        pad_back = max(end_pos - audio_length, 0)
-        end_pos = min(end_pos, audio_length)
-
-        mix_end_pos = start_target_pos + self.output_frames
-        mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
-
-        piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
-        piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-
-        targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
-        targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-        targets = targets_data[self.output_frames_start:self.output_frames_end]
-
-        return mix_audio, piano_source_audio, targets
+        print(f"Total samples: {num_examples}, Included: {len(self.data)}, Excluded: {excluded_samples}")
 
     def __getstate__(self):
         state = self.__dict__.copy()
