@@ -95,7 +95,7 @@ def main(args):
                 if args.cuda:
                     mix_audio = mix_audio.cuda()
                     piano_source_audio = piano_source_audio.cuda()
-                    target = target.cuda()
+                    targets = targets.cuda()
 
                 t = time.time()
 
