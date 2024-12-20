@@ -1,6 +1,7 @@
 import torch
 from scipy.signal import butter, lfilter
 from sortedcontainers import SortedList
+from tensorboard.summary.v1 import audio
 from torch.utils.data import Dataset
 import os
 import numpy as np
@@ -86,6 +87,10 @@ class SeparationDataset(Dataset):
         item = self.data[audio_idx]
         audio_length = item["length"]
 
+        print(audio_length)
+        if audio_length < self.output_frames:
+            print("------------------------------------------------------------------------------------")
+
         if self.random_hops:
             start_target_pos = np.random.randint(0, max(audio_length - self.output_frames + 1, 1))
         else:
@@ -108,8 +113,6 @@ class SeparationDataset(Dataset):
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
-
-        print(f"Mix audio length: {mix_audio.shape[0]}, expected: {self.output_frames}")
 
         return mix_audio, piano_source_audio, targets
 
