@@ -91,9 +91,11 @@ class SeparationDataset(Dataset):
         return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        file_idx, snippet_idx = self.snippet_mapping[index]
+        audio_idx = self.start_pos.bisect_right(index)
+        if audio_idx > 0:
+            index = index - self.start_pos[audio_idx - 1]
 
-        item = self.data[file_idx]
+        item = self.data[audio_idx]
         audio_length = item["length"]
         target_length = item["target_length"]
 
