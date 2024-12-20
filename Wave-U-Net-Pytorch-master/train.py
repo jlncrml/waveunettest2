@@ -91,10 +91,11 @@ def main(args):
 
         with tqdm(total=len(train_data) // args.batch_size) as pbar:
             np.random.seed()
-            for example_num, (audio, targets) in enumerate(dataloader):
+            for example_num, (mix_audio, piano_source_audio, targets) in enumerate(dataloader):
                 if args.cuda:
-                    audio = audio.cuda()
-                    targets = targets.cuda()
+                    mix_audio = mix_audio.cuda()
+                    piano_source_audio = piano_source_audio.cuda()
+                    target = target.cuda()
 
                 t = time.time()
 
@@ -110,7 +111,7 @@ def main(args):
                 optimizer.zero_grad()  # Zero gradients
 
                 # Forward pass with two inputs
-                out = model(audio)
+                out = model(mix_audio, piano_source_audio)
 
                 # Compute loss
                 loss = criterion(out, targets)
@@ -161,12 +162,13 @@ def validate(args, model, criterion1, criterion2, test_data):
     total_loss2 = 0.0
 
     with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
-        for example_num, (audio, target) in enumerate(dataloader):
+        for example_num, (mix,_audio, piano_source_audio, target) in enumerate(dataloader):
             if args.cuda:
-                audio = audio.cuda()
+                mix_audio = mix_audio.cuda()
+                piano_source_audio = piano_source_audio.cuda()
                 target = target.cuda()
 
-            out = model(audio)
+            out = model(mix_audio, piano_source_audio)
 
             loss1 = criterion1(out, target)
             loss1_val = loss1.item()

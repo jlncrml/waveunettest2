@@ -115,13 +115,11 @@ class SeparationDataset(Dataset):
         piano_source_audio[:self.output_frames_start] = 0
         piano_source_audio[self.output_frames_end:] = 0
 
-        audio = torch.cat((mix_audio.unsqueeze(0), piano_source_audio.unsqueeze(0)), dim=0)
-
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
 
-        return audio, targets
+        return mix_audio, piano_source_audio, targets
 
     def __getstate__(self):
         state = self.__dict__.copy()
