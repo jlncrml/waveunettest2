@@ -31,23 +31,13 @@ class LastSamplesMAELoss(nn.Module):
 
 
 def custom_collate_fn(batch):
+    # Unpack the batch into separate lists for each input
     mix_waveforms, piano_source_waveforms, targets = zip(*batch)
 
-    # Find max lengths for padding
-    max_mix_length = max(mix.shape[0] for mix in mix_waveforms)
-    max_piano_length = max(piano.shape[0] for piano in piano_source_waveforms)
-    max_target_length = max(target.shape[0] for target in targets)
-
-    # Pad tensors
-    mix_waveforms = torch.stack(
-        [F.pad(torch.as_tensor(mix), (0, max_mix_length - mix.shape[0])) for mix in mix_waveforms]
-    )
-    piano_source_waveforms = torch.stack(
-        [F.pad(torch.as_tensor(piano), (0, max_piano_length - piano.shape[0])) for piano in piano_source_waveforms]
-    )
-    targets = torch.stack(
-        [F.pad(torch.as_tensor(target), (0, max_target_length - target.shape[0])) for target in targets]
-    )
+    # Convert each input to a list of tensors
+    mix_waveforms = [torch.as_tensor(mix) for mix in mix_waveforms]
+    piano_source_waveforms = [torch.as_tensor(piano) for piano in piano_source_waveforms]
+    targets = [torch.as_tensor(target) for target in targets]
 
     return mix_waveforms, piano_source_waveforms, targets
 
