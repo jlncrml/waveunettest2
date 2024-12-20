@@ -142,51 +142,63 @@ class Waveunet(nn.Module):
 
     def set_output_size(self, target_output_size):
         self.target_output_size = target_output_size
-        self.input_size, self.output_size = self.check_padding(target_output_size)
+        self.input_size, self.output_size = self.brute_force_padding(target_output_size)
         assert ((self.input_size - self.output_size) % 2 == 0)
         self.input_frames = self.input_size
         self.output_frames = self.output_size
 
-
-    def check_padding(self, target_output_size):
-        bottleneck = 1
+    def brute_force_padding(self, target_output_size):
+        """
+        Dynamically test different bottleneck or input sizes to find suitable dimensions.
+        """
+        bottleneck = 1  # Start with the smallest bottleneck size
 
         while True:
-            out = self.check_padding_for_bottleneck(bottleneck, target_output_size)
+            out = self.simulate_padding(bottleneck, target_output_size)
 
             if out is not False:
                 return out
 
             bottleneck += 1
 
-    def check_padding_for_bottleneck(self, bottleneck, target_output_size):
+    def simulate_padding(self, bottleneck, target_output_size):
+        """
+        Dynamically test if the given bottleneck size results in a valid input and output size.
+        """
         try:
-            curr_size = bottleneck
+            # Start with a fake tensor for the bottleneck size
+            fake_tensor = torch.zeros(1, self.downsampling_blocks[-1].downconv.filter.out_channels, bottleneck)
 
-            for block in self.upsampling_blocks: # Compute output size going forward through upsampling
-                curr_size = block.get_output_size(curr_size)
+            # Simulate forward pass through upsampling blocks
+            for block in self.upsampling_blocks:
+                fake_tensor = block.upconv.filter(fake_tensor)
 
-            output_size = curr_size
-
-            curr_size = bottleneck # Compute input size going backward through bottleneck and downsampling
-            curr_size = self.bottleneck.get_input_size(curr_size)
-
-            for block in reversed(self.downsampling_blocks):
-                curr_size = block.get_input_size(curr_size)
+            output_size = fake_tensor.shape[-1]  # Extract the output size
 
             assert output_size >= target_output_size
 
-            return curr_size, output_size
+            # Reverse simulate back to input size
+            fake_tensor = torch.zeros(1, self.bottleneck.filter.in_channels, bottleneck)
+
+            # Pass through bottleneck
+            fake_tensor = self.bottleneck.filter(fake_tensor)
+
+            # Simulate forward pass through downsampling blocks in reverse
+            for block in reversed(self.downsampling_blocks):
+                fake_tensor = block.downconv.filter(fake_tensor)
+
+            input_size = fake_tensor.shape[-1]
+
+            # Ensure input size is valid
+            assert input_size > 0
+            assert output_size >= target_output_size
+
+            return input_size, output_size
 
         except AssertionError:
             return False
 
     def forward(self, mix_audio, piano_source_audio):
-        # mix_pad = (self.input_frames - self.output_frames) // 2
-        # padded_mix_waveform = F.pad(mix_waveform, (mix_pad, mix_pad), 'constant', 0.0).squeeze(0)
-        #
-        # x = torch.cat((padded_mix_waveform.unsqueeze(1), piano_source_waveform.unsqueeze(1)), dim=1)
-
         x = torch.cat((mix_audio.unsqueeze(1), piano_source_audio.unsqueeze(1)), dim=1)
 
         curr_input_size = x.shape[-1]
