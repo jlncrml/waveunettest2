@@ -70,6 +70,9 @@ class SeparationDataset(Dataset):
 
         lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
 
+        self.snippet_mapping = [(file_idx, snippet_idx) for file_idx, file in enumerate(self.data) for snippet_idx in
+                                range((file["target_length"] // self.output_frames) + 1)]
+
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
             self.length = self.start_pos[-1]
@@ -81,11 +84,8 @@ class SeparationDataset(Dataset):
         return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        audio_idx = self.start_pos.bisect_right(index)
-        if audio_idx > 0:
-            index = index - self.start_pos[audio_idx - 1]
-
-        item = self.data[audio_idx]
+        file_idx, snippet_idx = self.snippet_mapping[index]
+        item = self.data[file_idx]
         audio_length = item["length"]
         target_length = item["target_length"]
 
@@ -110,7 +110,7 @@ class SeparationDataset(Dataset):
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
         mix_audio[self.output_frames_end:] = 0
-        
+
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets = targets_data[self.output_frames_start:self.output_frames_end]
