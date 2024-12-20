@@ -67,7 +67,12 @@ class SeparationDataset(Dataset):
                 "length": min_length,
             })
 
-        lengths = [((d["length"] // self.output_frames) + 1) for d in self.data]
+        lengths = []
+        for d in self.data:
+            if d["length"] < self.output_frames:
+                lengths.append(0)  # No valid segments
+            else:
+                lengths.append((d["length"] // self.output_frames) + 1)
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
