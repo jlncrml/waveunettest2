@@ -74,6 +74,8 @@ class SeparationDataset(Dataset):
                     "targets": source_audios,
                     "length": min_length,
                 })
+            else:
+                print("NOT LONG ENOUGH")
 
         lengths = [d["length"] // self.output_frames for d in self.data]
 
