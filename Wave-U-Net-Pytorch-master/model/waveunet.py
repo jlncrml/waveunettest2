@@ -162,9 +162,6 @@ class Waveunet(nn.Module):
             bottleneck += 1
 
     def simulate_padding(self, bottleneck, target_output_size):
-        """
-        Dynamically test if the given bottleneck size results in a valid input and output size.
-        """
         try:
             # Start with a fake tensor for the bottleneck size
             fake_tensor = torch.zeros(1, self.downsampling_blocks[-1].downconv.filter.out_channels, bottleneck)
@@ -195,7 +192,8 @@ class Waveunet(nn.Module):
 
             return input_size, output_size
 
-        except AssertionError:
+        except (RuntimeError, AssertionError):
+            # Catch and safely return False for invalid configurations
             return False
 
     def forward(self, mix_audio, piano_source_audio):
