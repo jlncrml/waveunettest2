@@ -121,21 +121,23 @@ def main(args):
                     args.lr
                 )
 
-                optimizer.zero_grad() # Zero gradients
+                optimizer.zero_grad()  # Zero gradients
 
-                out = model(mix_waveform, piano_source_waveform) # Forward pass
+                # Forward pass with two inputs
+                out = model(mix_waveform, piano_source_waveform)
 
-                loss = criterion(out, targets) # Compute loss
+                # Compute loss
+                loss = criterion(out, targets)
 
-                # print(loss)
-
-                loss.backward()  # Backward pass and optimization
+                # Backward pass and optimization
+                loss.backward()
                 optimizer.step()
 
-                avg_loss = loss.item() # Record loss
+                # Update loss tracking
+                avg_loss = loss.item()
                 state["step"] += 1
 
-                t = time.time() - t # Timing
+                t = time.time() - t  # Timing
                 avg_time += (1.0 / (example_num + 1)) * (t - avg_time)
 
                 pbar.update(1)
