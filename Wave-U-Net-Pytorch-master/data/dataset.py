@@ -70,8 +70,11 @@ class SeparationDataset(Dataset):
 
         lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
 
-        self.snippet_mapping = [(file_idx, snippet_idx) for file_idx, file in enumerate(self.data) for snippet_idx in
-                                range((file["target_length"] // self.output_frames) + 1)]
+        self.snippet_mapping = [
+            (file_idx, snippet_idx)
+            for file_idx, file in enumerate(self.data)
+            for snippet_idx in range(file["target_length"] // self.output_frames)
+        ]
 
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
@@ -86,33 +89,33 @@ class SeparationDataset(Dataset):
     def __getitem__(self, index):
         file_idx, snippet_idx = self.snippet_mapping[index]
         item = self.data[file_idx]
+
         audio_length = item["length"]
         target_length = item["target_length"]
 
         if self.random_hops:
             start_target_pos = np.random.randint(0, max(target_length - self.output_frames + 1, 1))
         else:
-            start_target_pos = index * self.output_frames
+            start_target_pos = snippet_idx * self.output_frames
 
+        # Calculate start and end positions
         start_pos = start_target_pos - self.output_frames_start
         end_pos = start_target_pos - self.output_frames_start + self.input_frames
-
         pad_front = max(-start_pos, 0)
         start_pos = max(start_pos, 0)
-
         pad_back = max(end_pos - audio_length, 0)
         end_pos = min(end_pos, audio_length)
 
+        # Extract and pad audio
         mix_audio = torch.tensor(item["mix"][start_pos:end_pos].astype(np.float32))
-        mix_audio = F.pad(mix_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
-        piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-
-        mix_audio[self.output_frames_end:] = 0
-
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
+
+        # Apply padding
+        piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
+
+        # Extract target
         targets = targets_data[self.output_frames_start:self.output_frames_end]
 
         return mix_audio, piano_source_audio, targets
