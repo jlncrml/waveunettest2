@@ -65,10 +65,9 @@ class SeparationDataset(Dataset):
                 "piano_source": piano_source_audio,
                 "targets": source_audios,
                 "length": min_length,
-                "target_length": min_length
             })
 
-        lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
+        lengths = [((datum["length"] // self.output_frames) + 1) for datum in self.data]
         
         self.snippet_mapping = [
             (file_idx, snippet_idx)
@@ -84,13 +83,12 @@ class SeparationDataset(Dataset):
     def __getitem__(self, index):
         file_idx, snippet_idx = self.snippet_mapping[index]
 
-        # Retrieve the corresponding file (item) and its attributes
         item = self.data[file_idx]
+
         audio_length = item["length"]
-        target_length = item["target_length"]
 
         if self.random_hops:
-            start_target_pos = np.random.randint(0, max(target_length - self.output_frames + 1, 1))
+            start_target_pos = np.random.randint(0, max(audio_length - self.output_frames + 1, 1))
         else:
             start_target_pos = snippet_idx * self.output_frames
 
