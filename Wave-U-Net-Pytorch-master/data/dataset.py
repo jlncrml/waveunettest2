@@ -91,18 +91,17 @@ class SeparationDataset(Dataset):
         return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        audio_idx = self.start_pos.bisect_right(index)
-        if audio_idx > 0:
-            index = index - self.start_pos[audio_idx - 1]
+        file_idx, snippet_idx = self.snippet_mapping[index]
 
-        item = self.data[audio_idx]
+        # Retrieve the corresponding file (item) and its attributes
+        item = self.data[file_idx]
         audio_length = item["length"]
         target_length = item["target_length"]
 
         if self.random_hops:
             start_target_pos = np.random.randint(0, max(target_length - self.output_frames + 1, 1))
         else:
-            start_target_pos = index * self.output_frames
+            start_target_pos = snippet_idx * self.output_frames
 
         start_pos = start_target_pos - self.output_frames_start
         end_pos = start_target_pos - self.output_frames_start + self.input_frames
