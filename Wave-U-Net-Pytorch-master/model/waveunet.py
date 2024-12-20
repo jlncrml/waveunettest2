@@ -31,36 +31,6 @@ class ConvLayer(nn.Module):
     def forward(self, x):
         return F.relu(self.norm((self.filter(x))))
 
-    def get_input_size(self, output_size):
-        if not self.transpose:
-            curr_size = (output_size - 1)*self.stride + 1 # o = (i-1)//s + 1 => i = (o - 1)*s + 1
-        else:
-            curr_size = output_size
-
-        curr_size = curr_size + self.kernel_size - 1 # o = i + p - k + 1
-
-        if self.transpose:
-            assert ((curr_size - 1) % self.stride == 0) # We need to have a value at the beginning and end
-            curr_size = ((curr_size - 1) // self.stride) + 1
-
-        assert(curr_size > 0)
-
-        return curr_size
-
-    def get_output_size(self, input_size):
-        if self.transpose:
-            assert input_size > 1
-            curr_size = (input_size - 1) * self.stride + self.kernel_size
-        else:
-            curr_size = input_size
-            curr_size = curr_size - self.kernel_size + 1
-            assert ((curr_size - 1) % self.stride == 0)
-            curr_size = ((curr_size - 1) // self.stride) + 1
-
-        assert curr_size > 0
-
-        return curr_size
-
 
 class UpsamplingBlock(nn.Module):
     def __init__(self, n_inputs, n_shortcut, n_outputs, kernel_size, stride):
@@ -76,12 +46,6 @@ class UpsamplingBlock(nn.Module):
         combined = center_crop(shortcut, upsampled)
         combined = self.post_shortcut_conv(torch.cat([combined, center_crop(upsampled, combined)], dim=1))
         return combined
-
-    def get_output_size(self, input_size):
-        curr_size = self.upconv.get_output_size(input_size)
-        curr_size = self.pre_shortcut_conv.get_output_size(curr_size)
-        curr_size = self.post_shortcut_conv.get_output_size(curr_size)
-        return curr_size
 
 
 class DownsamplingBlock(nn.Module):
@@ -101,12 +65,6 @@ class DownsamplingBlock(nn.Module):
         out = self.post_shortcut_conv(out)
         out = self.downconv(out) # DOWNSAMPLING
         return out, shortcut
-
-    def get_input_size(self, output_size):
-        curr_size = self.downconv.get_input_size(output_size)
-        curr_size = self.post_shortcut_conv.get_input_size(curr_size)
-        curr_size = self.pre_shortcut_conv.get_input_size(curr_size)
-        return curr_size
 
 
 class Waveunet(nn.Module):
@@ -148,60 +106,29 @@ class Waveunet(nn.Module):
         self.output_frames = self.output_size
 
     def brute_force_padding(self, target_output_size):
-        """
-        Dynamically test different bottleneck or input sizes to find suitable dimensions.
-        """
-        bottleneck = 1  # Start with the smallest bottleneck size
+        input_size = target_output_size
 
         while True:
-            out = self.simulate_padding(bottleneck, target_output_size)
+            result = self.simulate_forward(input_size, target_output_size)
+            
+            if result is not False:
+                return result
 
-            if out is not False:
-                return out
+            input_size += 1
 
-            bottleneck += 1
-
-    def simulate_padding(self, bottleneck, target_output_size):
+    def simulate_forward(self, input_size, target_output_size):
         try:
-            # Start with a fake tensor for the bottleneck size
-            fake_tensor = torch.zeros(1, self.downsampling_blocks[-1].downconv.filter.out_channels, bottleneck)
-
-            # Simulate forward pass through upsampling blocks
-            for block in self.upsampling_blocks:
-                fake_tensor = block.upconv.filter(fake_tensor)
-
-            output_size = fake_tensor.shape[-1]  # Extract the output size
-
+            mix_audio = torch.zeros(1, input_size)
+            piano_source_audio = torch.zeros(1, input_size)
+            output = self.forward(mix_audio, piano_source_audio)
+            output_size = output.shape[-1]
             assert output_size >= target_output_size
-
-            # Reverse simulate back to input size
-            fake_tensor = torch.zeros(1, self.bottleneck.filter.in_channels, bottleneck)
-
-            # Pass through bottleneck
-            fake_tensor = self.bottleneck.filter(fake_tensor)
-
-            # Simulate forward pass through downsampling blocks in reverse
-            for block in reversed(self.downsampling_blocks):
-                fake_tensor = block.downconv.filter(fake_tensor)
-
-            input_size = fake_tensor.shape[-1]
-
-            # Ensure input size is valid
-            assert input_size > 0
-            assert output_size >= target_output_size
-
             return input_size, output_size
-
-        except (RuntimeError, AssertionError):
-            # Catch and safely return False for invalid configurations
+        except (RuntimeError, AssertionError, ArithmeticError):
             return False
 
     def forward(self, mix_audio, piano_source_audio):
         x = torch.cat((mix_audio.unsqueeze(1), piano_source_audio.unsqueeze(1)), dim=1)
-
-        curr_input_size = x.shape[-1]
-
-        assert (curr_input_size == self.input_size)
 
         shortcuts = []
         out = x
