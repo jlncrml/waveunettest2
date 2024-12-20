@@ -70,12 +70,6 @@ class SeparationDataset(Dataset):
 
         lengths = [((d["target_length"] // self.output_frames) + 1) for d in self.data]
 
-        self.snippet_mapping = [
-            (file_idx, snippet_idx)
-            for file_idx, file in enumerate(self.data)
-            for snippet_idx in range(file["target_length"] // self.output_frames)
-        ]
-
         if lengths:
             self.start_pos = SortedList(np.cumsum(lengths))
             self.length = self.start_pos[-1]
@@ -84,15 +78,14 @@ class SeparationDataset(Dataset):
             self.length = 0
 
     def __len__(self):
-        return len(self.snippet_mapping)
+        return min(self.length if hasattr(self, 'length') else 0, 10000)
 
     def __getitem__(self, index):
-        try:
-            file_idx, snippet_idx = self.snippet_mapping[index]
-        except IndexError:
-            raise IndexError(f"Index {index} out of range for snippet_mapping with length {len(self.snippet_mapping)}")
+        audio_idx = self.start_pos.bisect_right(index)
+        if audio_idx > 0:
+            index = index - self.start_pos[audio_idx - 1]
 
-        item = self.data[file_idx]
+        item = self.data[audio_idx]
         audio_length = item["length"]
         target_length = item["target_length"]
 
