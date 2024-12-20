@@ -119,31 +119,14 @@ class SeparationDataset(Dataset):
         pad_back = max(end_pos - audio_length, 0)
         end_pos = min(end_pos, audio_length)
 
-        # Slice mix_audio
-        mix_end_pos = start_target_pos + self.output_frames
-        mix_audio = torch.tensor(item["mix"][start_target_pos:mix_end_pos].astype(np.float32))
+        # Pad mix_audio if necessary
+        mix_audio = torch.tensor(item["mix"][start_pos:end_pos].astype(np.float32))
+        mix_audio = F.pad(mix_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
-        if mix_audio.shape[0] != self.output_frames:
-            print(f"Invalid mix_audio shape: {mix_audio.shape[0]} (expected {self.output_frames})")
-            raise ValueError("mix_audio size mismatch!")
+        # Ensure zeroing outside the output frames
+        mix_audio[:self.output_frames_start] = 0
+        mix_audio[self.output_frames_end:] = 0
 
-        # Slice and pad piano_source_audio
-        piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
-        piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-
-        if piano_source_audio.shape[0] != self.input_frames:
-            print(f"Invalid piano_source_audio shape: {piano_source_audio.shape[0]} (expected {self.input_frames})")
-            raise ValueError("piano_source_audio size mismatch!")
-
-        # Slice and pad targets
-        targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
-        targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-        targets = targets_data[self.output_frames_start:self.output_frames_end]
-
-        if targets.shape[0] != self.output_frames:
-            print(f"Invalid targets shape: {targets.shape[0]} (expected {self.output_frames})")
-            raise ValueError("targets size mismatch!")
-        
         # Slice and pad piano_source_audio
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
