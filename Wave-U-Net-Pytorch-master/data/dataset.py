@@ -124,6 +124,16 @@ class SeparationDataset(Dataset):
         piano_source_audio = torch.tensor(item["piano_source"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
 
+        # Zero out regions outside the output frames
+        mix_audio[:self.output_frames_start] = 0
+        mix_audio[self.output_frames_end:] = 0
+
+        piano_source_audio[:self.output_frames_start] = 0
+        piano_source_audio[self.output_frames_end:] = 0
+
+        # Combine mix and piano source into separate channels
+        audio = torch.stack((mix_audio, piano_source_audio), dim=0)
+
         # Slice and pad targets
         targets_data = torch.tensor(item["targets"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
