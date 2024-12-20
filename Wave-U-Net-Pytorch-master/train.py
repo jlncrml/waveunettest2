@@ -32,22 +32,8 @@ class LastSamplesMAELoss(nn.Module):
 
 def custom_collate_fn(batch):
     mix_waveforms, piano_source_waveforms, targets = zip(*batch)
-
-    # Debugging tensor sizes
-    mix_lengths = [mix.shape[0] for mix in mix_waveforms]
-    piano_lengths = [piano.shape[0] for piano in piano_source_waveforms]
-    target_lengths = [target.shape[0] for target in targets]
-
-    print("Mix waveform lengths in batch:", mix_lengths)
-    print("Piano source lengths in batch:", piano_lengths)
-    print("Target lengths in batch:", target_lengths)
-
-    # Verify consistency within each input type
-    assert all(length == mix_lengths[0] for length in mix_lengths), "Inconsistent mix_waveform lengths in batch!"
-    assert all(length == piano_lengths[0] for length in piano_lengths), "Inconsistent piano_source_waveform lengths in batch!"
-    assert all(length == target_lengths[0] for length in target_lengths), "Inconsistent target lengths in batch!"
-
-    # Stack tensors if all lengths are consistent
+    print("Batch sizes:", [m.shape for m in mix_waveforms])
+    # Stack tensors for each input type
     mix_waveforms = torch.stack([torch.as_tensor(mix) for mix in mix_waveforms])
     piano_source_waveforms = torch.stack([torch.as_tensor(piano) for piano in piano_source_waveforms])
     targets = torch.stack([torch.as_tensor(target) for target in targets])
@@ -136,14 +122,18 @@ def main(args):
 
                 optimizer.zero_grad()  # Zero gradients
 
-                out = model(mix_waveform, piano_source_waveform)  # Forward pass
+                # Forward pass with two inputs
+                out = model(mix_waveform, piano_source_waveform)
 
-                loss = criterion(out, targets)  # Compute loss
+                # Compute loss
+                loss = criterion(out, targets)
 
-                loss.backward()  # Backward pass and optimization
+                # Backward pass and optimization
+                loss.backward()
                 optimizer.step()
 
-                avg_loss = loss.item()  # Record loss
+                # Update loss tracking
+                avg_loss = loss.item()
                 state["step"] += 1
 
                 t = time.time() - t  # Timing
@@ -151,7 +141,8 @@ def main(args):
 
                 pbar.update(1)
 
-        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data)  # VALIDATE
+
+        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
         print("VALIDATION FINISHED: LOSS: " + str(val_loss) + "LAST 2048 LOSS: " + str(last_val_loss))
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
