@@ -53,20 +53,16 @@ class SeparationDataset(Dataset):
 
             source_audios = np.concatenate(source_audios, axis=0)
 
-            # Apply filters
             mix_audio = butter_lowpass_filter(mix_audio, self.cutoff_freq, self.sr)
             piano_source_audio = butter_lowpass_filter(piano_source_audio, self.cutoff_freq, self.sr)
             source_audios = butter_lowpass_filter(source_audios, self.cutoff_freq, self.sr)
 
-            # Downsample
             mix_audio = mix_audio[::4]
             piano_source_audio = piano_source_audio[::4]
             source_audios = source_audios[::4]
 
-            # Trim to minimum length
             min_length = min(mix_audio.shape[0], piano_source_audio.shape[0], source_audios.shape[0])
 
-            # Only include samples with sufficient length
             if min_length >= self.output_frames:
                 mix_audio = mix_audio[:min_length]
                 piano_source_audio = piano_source_audio[:min_length]
@@ -79,7 +75,6 @@ class SeparationDataset(Dataset):
                     "length": min_length,
                 })
 
-        # Calculate valid lengths
         lengths = [d["length"] // self.output_frames for d in self.data]
 
         if lengths:
@@ -99,11 +94,6 @@ class SeparationDataset(Dataset):
 
         item = self.data[audio_idx]
         audio_length = item["length"]
-
-        # Debugging
-        print(f"Audio Length: {audio_length}")
-        if audio_length < self.output_frames:
-            print("------------------------------------------------------------------------------------")
 
         if self.random_hops:
             start_target_pos = np.random.randint(0, audio_length - self.output_frames + 1)
