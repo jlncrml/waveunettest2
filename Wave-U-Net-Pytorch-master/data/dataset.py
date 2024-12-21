@@ -102,6 +102,7 @@ class SeparationDataset(torch.utils.data.Dataset):
 
         if peak > 0:
             scale = 1.0 / peak
+            print(scale)
             mix_audio = mix_audio * 1
             voice_waveform = voice_waveform * 1
             piano_bleed_waveform = piano_bleed_waveform * 1
