@@ -96,12 +96,15 @@ def main(args):
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-    # scheduler = CosineAnnealingWarmRestarts(
-    #     optimizer,
-    #     T_0=len(train_data) // BATCH_SIZE,  # One cycle = one epoch
-    #     T_mult=1,  # Keep cycle lengths constant
-    #     eta_min=MIN_LEARNING_RATE  # Set the minimum learning rate
-    # )
+    cycle_length = len(train_data) // BATCH_SIZE // N_CYCLES
+
+    # Initialize the scheduler
+    scheduler = CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0=cycle_length,  # Length of one cycle
+        T_mult=1,  # No increasing cycle length
+        eta_min=MIN_LEARNING_RATE
+    )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
@@ -142,10 +145,10 @@ def main(args):
                 loss.backward()
                 optimizer.step()
 
-                # current_lr = scheduler.get_last_lr()
-                print(f"Current LR: {utils.get_lr(optimizer)}")
+                current_lr = scheduler.get_last_lr()
+                print(f"Current LR: {current_lr}")
 
-                # scheduler.step()
+                scheduler.step()
 
                 state["step"] += 1
 
