@@ -96,34 +96,25 @@ def main(args):
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-    # scheduler = torch.optim.lr_scheduler.LambdaLR(
-    #     optimizer,
-    #     lr_lambda=lambda step: (
-    #         MIN_LEARNING_RATE
-    #         + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
-    #         * (
-    #             1
-    #             + np.cos(
-    #                 (step % (len(train_data) // BATCH_SIZE // N_CYCLES))
-    #                 / (len(train_data) // BATCH_SIZE // N_CYCLES) * np.pi)
-    #             )
-    #         ) / LEARNING_RATE
-    # )
-
     cycle_length = (len(train_data) // BATCH_SIZE) // N_CYCLES
+
+    # This lambda replicates your set_cyclic_lr logic
+    def lr_lambda(step):
+        # Which cycle are we in?
+        curr_cycle = min(step // cycle_length, N_CYCLES - 1)
+        curr_it = step - cycle_length * curr_cycle
+
+        return (
+                MIN_LEARNING_RATE
+                + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
+                * (1 + np.cos(float(curr_it) / float(cycle_length) * np.pi))
+        ) / LEARNING_RATE
+        # ^ We divide by LEARNING_RATE so the final scaled LR always
+        # starts with multiplier = 1 for the original optimizer.lr.
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
-        lr_lambda=lambda step: (
-            MIN_LEARNING_RATE
-            + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
-            * (
-                1 + np.cos(
-                    (float(step % cycle_length)
-                    / float(cycle_length)) * np.pi
-                )
-            )
-        ) / LEARNING_RATE
+        lr_lambda=lr_lambda
     )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
