@@ -107,19 +107,26 @@ class SeparationDataset(torch.utils.data.Dataset):
 
         scaled_voice_waveform = voice_waveform * scale
         scaled_piano_bleed_waveform = piano_bleed_waveform * scale
-        mix_waveform = scaled_voice_waveform + scaled_piano_bleed_waveform
+        scaled_mix_waveform = scaled_voice_waveform + scaled_piano_bleed_waveform
 
-        mix_waveform[self.output_end:] = 0
+        # Debug: unscale them back
+        unscale_factor = 1.0 / scale  # or simply `peak`
+        unscaled_voice_waveform = scaled_voice_waveform * unscale_factor
+        unscaled_piano_bleed_waveform = scaled_piano_bleed_waveform * unscale_factor
+        unscaled_mix_waveform = scaled_mix_waveform * unscale_factor
 
+        # Optional: compare the original voice_waveform with unscaled_voice_waveform
+        # They should be nearly identical if everything is correct
+        diff_voice = (voice_waveform - unscaled_voice_waveform).abs().max()
+        diff_mix = (mix_waveform - unscaled_mix_waveform).abs().max()
+
+        print(f"Diff voice: {diff_voice}, diff mix: {diff_mix}")
+
+        # Continue as usual
+        scaled_mix_waveform[self.output_end:] = 0
         targets = scaled_voice_waveform[self.output_start: self.output_end]
 
-        mix_waveform = mix_waveform * 0.33
-        piano_source_audio = piano_source_audio * 0.33
-        targets = targets * 0.33
-
-        # print(max(mix_waveform))]
-
-        return mix_waveform, piano_source_audio, targets
+        return scaled_mix_waveform, piano_source_audio, targets
 
     @staticmethod
     def downsampled_waveform(path):
