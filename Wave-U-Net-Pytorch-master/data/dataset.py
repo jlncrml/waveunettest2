@@ -89,7 +89,7 @@ class SeparationDataset(torch.utils.data.Dataset):
         pad_back = max(end_pos - item["length"], 0)
         end_pos = min(end_pos, item["length"])
 
-        voice_waveform, piano_bleed_waveform, piano_source_audio = (
+        voice_waveform, piano_bleed_waveform, piano_source_waveform = (
             F.pad(
                 torch.tensor(item[key][start_pos:end_pos].astype(np.float32)),
                 (pad_front, pad_back),
@@ -100,21 +100,31 @@ class SeparationDataset(torch.utils.data.Dataset):
         )
 
         piano_bleed_waveform = self.__class__.apply_random_db_adjustment(piano_bleed_waveform, -6.0, 3.0)
-        unnormalized_mix_waveform = voice_waveform + piano_bleed_waveform
-        unnormalized_mix_waveform_peak = unnormalized_mix_waveform.abs().max()
 
-        mix_scale = 1.0 / unnormalized_mix_waveform_peak
-        
-        mix_waveform = unnormalized_mix_waveform * mix_scale
-        voice_waveform = voice_waveform * mix_scale
+        mix_waveform = voice_waveform + piano_bleed_waveform
 
-        mix_waveform[self.output_end:] = 0
+        mix_peak = mix_waveform.abs().max()
 
-        piano_source_audio = piano_source_audio * (1.0 / piano_source_audio.abs().max())
+        if mix_peak > 0:
+            mix_scale = 1.0 / mix_peak
+        else:
+            mix_scale = 1.0
 
-        targets = voice_waveform[self.output_start: self.output_end]
+        normalized_mix_waveform = mix_waveform * mix_scale
+        scaled_voice_waveform = voice_waveform * mix_scale
 
-        return mix_waveform, piano_source_audio, targets
+        normalized_mix_waveform[self.output_end:] = 0
+
+        piano_source_peak = piano_source_waveform.abs().max()
+
+        if piano_source_peak > 0:
+            normalized_piano_source_waveform = piano_source_waveform * (1.0 / piano_source_peak)
+        else:
+            normalized_piano_source_waveform = piano_source_waveform
+
+        targets = scaled_voice_waveform[self.output_start: self.output_end]
+
+        return normalized_mix_waveform, normalized_piano_source_waveform, targets
 
     @staticmethod
     def downsampled_waveform(path):
