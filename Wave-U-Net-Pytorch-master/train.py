@@ -127,14 +127,14 @@ def main(args):
 
                 t = time.time()
 
-                utils.set_cyclic_lr(
-                    optimizer,
-                    example_num,
-                    len(train_data) // BATCH_SIZE,
-                    N_CYCLES,
-                    MIN_LEARNING_RATE,
-                    LEARNING_RATE
-                )
+                # utils.set_cyclic_lr(
+                #     optimizer,
+                #     example_num,
+                #     len(train_data) // BATCH_SIZE,
+                #     N_CYCLES,
+                #     MIN_LEARNING_RATE,
+                #     LEARNING_RATE
+                # )
 
                 optimizer.zero_grad()
 
