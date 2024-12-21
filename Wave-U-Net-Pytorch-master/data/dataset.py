@@ -98,9 +98,19 @@ class SeparationDataset(torch.utils.data.Dataset):
         )
 
         mix_audio = voice_waveform + piano_bleed_waveform
-        mix_audio[self.output_end:] = 0
+        peak = torch.max(torch.abs(mix_audio))
 
-        targets = voice_waveform[self.output_start:self.output_end]
+        if peak > 0:
+            scale = 1.0 / peak
+            mix_audio = mix_audio * scale
+            voice_waveform = voice_waveform * scale
+            piano_bleed_waveform = piano_bleed_waveform * scale
+            piano_source_audio = piano_source_audio * scale
+        else:
+            scale = 1.0
+
+        mix_audio[self.output_end:] = 0
+        targets = voice_waveform[self.output_start: self.output_end]
 
         return mix_audio, piano_source_audio, targets
 
