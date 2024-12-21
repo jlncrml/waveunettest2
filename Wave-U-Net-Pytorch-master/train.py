@@ -149,7 +149,7 @@ def main(args):
                 current_lr = scheduler.get_last_lr()
                 # print(f"Current LR: {current_lr}")
 
-                scheduler.step()
+                # scheduler.step()
 
                 state["step"] += 1
 
