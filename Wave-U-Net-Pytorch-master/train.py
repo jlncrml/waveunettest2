@@ -3,6 +3,7 @@ import os
 import time
 import numpy as np
 from torch.optim import Adam
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from tqdm import tqdm
 import model.utils as model_utils
 import utils
@@ -94,6 +95,7 @@ def main(args):
     filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=len(train_data) // BATCH_SIZE, T_mult=N_CYCLES)
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
@@ -133,6 +135,8 @@ def main(args):
 
                 loss.backward()
                 optimizer.step()
+
+                scheduler.step(state["step"] / len(train_data))
 
                 state["step"] += 1
 
