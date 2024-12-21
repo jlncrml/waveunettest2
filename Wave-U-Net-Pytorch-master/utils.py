@@ -17,4 +17,6 @@ def set_cyclic_lr(optimizer, it, epoch_it, cycles, min_lr, max_lr):
 
     new_lr = min_lr + 0.5*(max_lr - min_lr)*(1 + np.cos((float(curr_it) / float(cycle_length)) * np.pi))
 
+    print(new_lr)
+
     set_lr(optimizer, new_lr)
