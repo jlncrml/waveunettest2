@@ -87,40 +87,27 @@ class SeparationDataset(torch.utils.data.Dataset):
         pad_back = max(end_pos - item["length"], 0)
         end_pos = min(end_pos, item["length"])
 
-        voice_waveform = F.pad(
-            torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32)),
-            (pad_front, pad_back),
-            'constant',
-            0.0
+        voice_waveform, piano_bleed_waveform, piano_source_audio = (
+            F.pad(
+                torch.tensor(item[key][start_pos:end_pos].astype(np.float32)),
+                (pad_front, pad_back),
+                'constant',
+                0.0
+            )
+            for key in ["voice_waveform", "piano_speaker_bleed_waveform", "piano_source_waveform"]
         )
 
-        piano_bleed_waveform = F.pad(
-            torch.tensor(item["piano_speaker_bleed_waveform"][start_pos:end_pos].astype(np.float32)),
-            (pad_front, pad_back),
-            'constant',
-            0.0
-        )
+        scale = 1.0 / (voice_waveform + piano_bleed_waveform).abs().max() + 1e-9
 
-        piano_source_audio = F.pad(
-            torch.tensor(item["piano_source_waveform"][start_pos:end_pos].astype(np.float32)),
-            (pad_front, pad_back),
-            'constant',
-            0.0
-        )
+        scaled_voice_waveform = voice_waveform * scale
+        scaled_piano_bleed_waveform = piano_bleed_waveform * scale
+        mix_waveform = scaled_voice_waveform + scaled_piano_bleed_waveform
 
-        mix_audio = voice_waveform + piano_bleed_waveform
-        mix_audio[self.output_end:] = 0
+        mix_waveform[self.output_end:] = 0
 
-        targets = voice_waveform[self.output_start:self.output_end]
+        targets = scaled_voice_waveform[self.output_start: self.output_end]
 
-        return mix_audio, piano_source_audio, targets
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
+        return mix_waveform, piano_source_audio, targets
 
     @staticmethod
     def downsampled_waveform(path):
