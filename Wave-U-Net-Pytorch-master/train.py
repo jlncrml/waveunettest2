@@ -125,9 +125,7 @@ def main(args):
             np.random.seed()
             for example_num, (mix_audio, piano_source_audio, targets) in enumerate(dataloader):
                 if torch.cuda.is_available():
-                    mix_audio = mix_audio.cuda()
-                    piano_source_audio = piano_source_audio.cuda()
-                    targets = targets.cuda()
+                    mix_audio, piano_source_audio, target = (t.cuda() for t in [mix_audio, piano_source_audio, target])
 
                 t = time.time()
 
@@ -180,9 +178,7 @@ def validate(args, model, criterion, test_data):
     with torch.no_grad(), tqdm(total=len(test_data) // BATCH_SIZE) as pbar:
         for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
             if torch.cuda.is_available():
-                mix_audio = mix_audio.cuda()
-                piano_source_audio = piano_source_audio.cuda()
-                target = target.cuda()
+                mix_audio, piano_source_audio, target = (t.cuda() for t in [mix_audio, piano_source_audio, target])
 
             out = model(mix_audio, piano_source_audio)
 
