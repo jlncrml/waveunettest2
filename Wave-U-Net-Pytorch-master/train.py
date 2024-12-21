@@ -6,8 +6,7 @@ from torch.optim import Adam
 from tqdm import tqdm
 import model.utils as model_utils
 import utils
-from data.dataset import SeparationDataset, get_dataset
-from data.dataset import get_dataset_folds
+from data.dataset import SeparationDataset
 from model.waveunet import Waveunet
 import torch
 import torch.nn as nn
@@ -58,25 +57,15 @@ def main(args):
         model = model_utils.DataParallel(model)
         model.cuda()
 
-    dataset_data = get_dataset_folds(args.dataset_dir)
-
     train_data = SeparationDataset(
-        dataset_data,
-        "train",
-        ["voice"],
-        SAMPLE_RATE,
-        1,
+        os.path.join(args.dataset_dir, "train"),
         model.input_length,
         model.output_length,
         True
     )
 
     val_data = SeparationDataset(
-        dataset_data,
-        "val",
-        ["voice"],
-        SAMPLE_RATE,
-        1,
+        os.path.join(args.dataset_dir, "test"),
         model.input_length,
         model.output_length,
         False
@@ -112,18 +101,18 @@ def main(args):
         lr_lambda=lr_lambda
     )
 
-    state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
+    state = {"step": 0, "n_worse_epochs": 0, "n_epochs": 0, "best_loss": np.Inf}
 
-    while state["worse_epochs"] < PATIENCE:
-        print("Epoch " + str(state["epochs"] + 1))
+    while state["n_worse_epochs"] < PATIENCE:
+        print("Epoch " + str(state["n_epochs"] + 1))
 
         avg_time = 0.
 
         model.train()
 
-        with tqdm(total=len(train_data) // BATCH_SIZE) as pbar:
+        with tqdm(total=len(train_data) // BATCH_SIZE) as progress_bar:
             np.random.seed()
-            for example_num, (mix_audio, piano_source_audio, targets) in enumerate(dataloader):
+            for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
                 if torch.cuda.is_available():
                     mix_audio, piano_source_audio, target = (t.cuda() for t in [mix_audio, piano_source_audio, target])
 
@@ -140,20 +129,20 @@ def main(args):
 
                 state["step"] += 1
 
-                pbar.update(1)
+                progress_bar.update(1)
 
         validation_loss = validate(args, model, validation_criterion, val_data)
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
 
         if validation_loss >= state["best_loss"]:
-            state["worse_epochs"] += 1
+            state["n_worse_epochs"] += 1
         else:
-            state["worse_epochs"] = 0
+            state["n_worse_epochs"] = 0
             state["best_loss"] = validation_loss
             state["best_checkpoint"] = checkpoint_path
 
-        state["epochs"] += 1
+        state["n_epochs"] += 1
 
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
@@ -194,7 +183,7 @@ def validate(args, model, criterion, test_data):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
+    parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData/")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
     args = parser.parse_args()
     main(args)
