@@ -120,7 +120,7 @@ class SeparationDataset(torch.utils.data.Dataset):
         diff_voice = (voice_waveform - unscaled_voice_waveform).abs().max()
         diff_mix = (mix_waveform - unscaled_mix_waveform).abs().max()
 
-        print(f"Diff voice: {diff_voice}, diff mix: {diff_mix}")
+        # print(f"Diff voice: {diff_voice}, diff mix: {diff_mix}")
 
         # Continue as usual
         scaled_mix_waveform[self.output_end:] = 0
