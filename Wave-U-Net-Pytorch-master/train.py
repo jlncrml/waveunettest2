@@ -144,8 +144,8 @@ def main(args):
 
                 current_lr = scheduler.get_last_lr()
                 print(f"Current LR: {current_lr}")
-                
-                scheduler.step(state["step"] / len(train_data))
+
+                scheduler.step()
 
                 state["step"] += 1
 
