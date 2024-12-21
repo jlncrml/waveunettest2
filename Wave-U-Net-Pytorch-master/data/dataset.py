@@ -102,14 +102,14 @@ class SeparationDataset(torch.utils.data.Dataset):
 
         if peak > 0:
             scale = 1.0 / peak
-            mix_audio = mix_audio * scale
-            voice_waveform = voice_waveform * scale
-            piano_bleed_waveform = piano_bleed_waveform * scale
-            piano_source_audio = piano_source_audio * scale
+            mix_audio = mix_audio * 1
+            voice_waveform = voice_waveform * 1
+            piano_bleed_waveform = piano_bleed_waveform * 1
+            piano_source_audio = piano_source_audio * 1
         else:
             scale = 1.0
 
-        print("Peak of mix_audio after normalization:", torch.max(torch.abs(mix_audio)).item())
+        # print("Peak of mix_audio after normalization:", torch.max(torch.abs(mix_audio)).item())
 
         mix_audio[self.output_end:] = 0
         targets = voice_waveform[self.output_start: self.output_end]
