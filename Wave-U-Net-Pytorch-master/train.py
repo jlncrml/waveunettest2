@@ -3,7 +3,6 @@ import os
 import time
 import numpy as np
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from tqdm import tqdm
 import model.utils as model_utils
 import utils
@@ -55,7 +54,7 @@ def main(args):
         strides=STRIDES
     )
 
-    if args.cuda:
+    if torch.cuda.is_available():
         model = model_utils.DataParallel(model)
         model.cuda()
 
@@ -98,9 +97,7 @@ def main(args):
 
     cycle_length = (len(train_data) // BATCH_SIZE) // N_CYCLES
 
-    # This lambda replicates your set_cyclic_lr logic
     def lr_lambda(step):
-        # Which cycle are we in?
         curr_cycle = min(step // cycle_length, N_CYCLES - 1)
         curr_it = step - cycle_length * curr_cycle
 
@@ -109,8 +106,6 @@ def main(args):
                 + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
                 * (1 + np.cos(float(curr_it) / float(cycle_length) * np.pi))
         ) / LEARNING_RATE
-        # ^ We divide by LEARNING_RATE so the final scaled LR always
-        # starts with multiplier = 1 for the original optimizer.lr.
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -129,7 +124,7 @@ def main(args):
         with tqdm(total=len(train_data) // BATCH_SIZE) as pbar:
             np.random.seed()
             for example_num, (mix_audio, piano_source_audio, targets) in enumerate(dataloader):
-                if args.cuda:
+                if torch.cuda.is_available():
                     mix_audio = mix_audio.cuda()
                     piano_source_audio = piano_source_audio.cuda()
                     targets = targets.cuda()
@@ -184,7 +179,7 @@ def validate(args, model, criterion, test_data):
 
     with torch.no_grad(), tqdm(total=len(test_data) // BATCH_SIZE) as pbar:
         for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
-            if args.cuda:
+            if torch.cuda.is_available():
                 mix_audio = mix_audio.cuda()
                 piano_source_audio = piano_source_audio.cuda()
                 target = target.cuda()
@@ -208,7 +203,6 @@ def validate(args, model, criterion, test_data):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cuda', action='store_true')
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
     args = parser.parse_args()
