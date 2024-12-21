@@ -95,7 +95,13 @@ def main(args):
     filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
-    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=len(train_data) // BATCH_SIZE, T_mult=N_CYCLES)
+    
+    scheduler = CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0=len(train_data) // BATCH_SIZE,  # One cycle = one epoch
+        T_mult=1,  # Keep cycle lengths constant
+        eta_min=MIN_LEARNING_RATE  # Set the minimum learning rate
+    )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
