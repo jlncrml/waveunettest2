@@ -97,14 +97,29 @@ class SeparationDataset(torch.utils.data.Dataset):
             for key in ["voice_waveform", "piano_speaker_bleed_waveform", "piano_source_waveform"]
         )
 
-        mix_audio = voice_waveform + piano_bleed_waveform
-        mix_audio[self.output_end:] = 0
+        mix_waveform = voice_waveform + piano_bleed_waveform
+        peak = mix_waveform.abs().max()
 
-        targets = voice_waveform[self.output_start:self.output_end]
+        if peak == 0:
+            scale = 1.0
+        else:
+            scale = 1.0 / peak
 
-        print(max(mix_audio))
+        scaled_voice_waveform = voice_waveform * scale
+        scaled_piano_bleed_waveform = piano_bleed_waveform * scale
+        mix_waveform = scaled_voice_waveform + scaled_piano_bleed_waveform
 
-        return mix_audio, piano_source_audio, targets
+        mix_waveform[self.output_end:] = 0
+
+        targets = scaled_voice_waveform[self.output_start: self.output_end]
+
+        mix_waveform = mix_waveform * 0.33
+        piano_source_audio = piano_source_audio * 0.33
+        targets = targets * 0.33
+
+        print(max(mix_waveform))
+
+        return mix_waveform, piano_source_audio, targets
 
     @staticmethod
     def downsampled_waveform(path):
