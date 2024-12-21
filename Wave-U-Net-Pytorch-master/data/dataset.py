@@ -102,7 +102,9 @@ class SeparationDataset(torch.utils.data.Dataset):
 
         targets = voice_waveform[self.output_start:self.output_end]
 
-        return mix_audio * 1.75, piano_source_audio * 1.75, targets * 1.75
+        print(max(mix_audio))
+
+        return mix_audio, piano_source_audio, targets
 
     @staticmethod
     def downsampled_waveform(path):
