@@ -1,5 +1,6 @@
 import torch
 from scipy.signal import butter, lfilter
+from torch.fx.experimental.fx_acc.acc_normalizer import normalize
 from torch.utils.data import Dataset
 import os
 import numpy as np
@@ -114,7 +115,8 @@ class SeparationDataset(torch.utils.data.Dataset):
         voice_audio = F.pad(voice_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
         piano_bleed_audio = torch.tensor(item["piano_speaker_bleed_waveform"][start_pos:end_pos].astype(np.float32))
         piano_bleed_audio = F.pad(piano_bleed_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-        mix_audio = self.normalize(voice_audio + piano_bleed_audio)
+        mix_audio = voice_audio + piano_bleed_audio
+        mix_audio = normalize(mix_audio)
         mix_audio[self.output_end:] = 0
 
         piano_source_audio = torch.tensor(item["piano_source_waveform"][start_pos:end_pos].astype(np.float32))
@@ -133,6 +135,6 @@ class SeparationDataset(torch.utils.data.Dataset):
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def normalize(waveform):
+    def normalize(self, waveform):
         peak = torch.max(torch.abs(waveform))
         return waveform / peak if peak > 0 else waveform
