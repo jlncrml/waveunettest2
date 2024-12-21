@@ -95,7 +95,7 @@ def main(args):
     filtered_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
-    
+
     scheduler = CosineAnnealingWarmRestarts(
         optimizer,
         T_0=len(train_data) // BATCH_SIZE,  # One cycle = one epoch
@@ -142,6 +142,9 @@ def main(args):
                 loss.backward()
                 optimizer.step()
 
+                current_lr = scheduler.get_last_lr()
+                print(f"Current LR: {current_lr}")
+                
                 scheduler.step(state["step"] / len(train_data))
 
                 state["step"] += 1
