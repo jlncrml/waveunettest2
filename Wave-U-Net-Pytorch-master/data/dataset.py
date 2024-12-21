@@ -94,7 +94,6 @@ class SeparationDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         file_idx, snippet_idx = self.snippet_mapping[index]
-
         item = self.data[file_idx]
 
         if self.validate:
@@ -111,13 +110,15 @@ class SeparationDataset(torch.utils.data.Dataset):
         pad_back = max(end_pos - item["length"], 0)
         end_pos = min(end_pos, item["length"])
 
-        mix_audio = torch.tensor(item["mix_waveform"][start_pos:end_pos].astype(np.float32))
-        mix_audio = F.pad(mix_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
+        voice_audio = torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32))
+        voice_audio = F.pad(voice_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
+        piano_bleed_audio = torch.tensor(item["piano_speaker_bleed_waveform"][start_pos:end_pos].astype(np.float32))
+        piano_bleed_audio = F.pad(piano_bleed_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
+        mix_audio = self.normalize(voice_audio + piano_bleed_audio)
+        mix_audio[self.output_end:] = 0
 
         piano_source_audio = torch.tensor(item["piano_source_waveform"][start_pos:end_pos].astype(np.float32))
         piano_source_audio = F.pad(piano_source_audio.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
-
-        mix_audio[self.output_end:] = 0
 
         targets_data = torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32))
         targets_data = F.pad(targets_data.unsqueeze(0), (pad_front, pad_back), 'constant', 0.0).squeeze(0)
@@ -131,3 +132,7 @@ class SeparationDataset(torch.utils.data.Dataset):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+
+    def normalize(waveform):
+        peak = torch.max(torch.abs(waveform))
+        return waveform / peak if peak > 0 else waveform
