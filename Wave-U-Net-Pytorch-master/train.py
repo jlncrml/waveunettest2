@@ -96,15 +96,14 @@ def main(args):
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-    total_steps = len(train_data) // BATCH_SIZE
-    cycle_length = total_steps // 2  # Assuming a restart at 50% (halfway)
+    cycle_length = len(train_data) // (BATCH_SIZE * N_CYCLES)
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lr_lambda=lambda step: (
                 MIN_LEARNING_RATE +
-                (LEARNING_RATE - MIN_LEARNING_RATE) *
-                (1 - abs((step % cycle_length) / cycle_length - 0.5) * 2)
+                0.5 * (LEARNING_RATE - MIN_LEARNING_RATE) *
+                (1 + np.cos((step % cycle_length) / cycle_length * np.pi))
         )
     )
 
