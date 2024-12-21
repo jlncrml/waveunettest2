@@ -19,10 +19,8 @@ class ConvLayer(nn.Module):
 
         NORM_CHANNELS = 8
 
-        if self.transpose:
-            self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride)
-        else:
-            self.filter = nn.Conv1d(n_inputs, n_outputs, self.kernel_size, stride)
+        if self.transpose: self.filter = nn.ConvTranspose1d(n_inputs, n_outputs, self.kernel_size, stride)
+        else: self.filter = nn.Conv1d(n_inputs, n_outputs, self.kernel_size, stride)
 
         assert(n_outputs % NORM_CHANNELS == 0)
 
@@ -68,11 +66,13 @@ class DownsamplingBlock(nn.Module):
 
 
 class Waveunet(nn.Module):
-    def __init__(self, num_channels, kernel_size, target_output_size, strides=2):
+    def __init__(self, num_channels, kernel_size, input_length, output_length, strides=2):
         super(Waveunet, self).__init__()
         self.num_levels = len(num_channels)
         self.strides = strides
         self.kernel_size = kernel_size
+        self.input_length = input_length
+        self.output_length = output_length
 
         assert (kernel_size % 2 == 1)
 
@@ -96,48 +96,10 @@ class Waveunet(nn.Module):
 
         self.output_conv = nn.Conv1d(num_channels[0], 1, 1)
 
-        self.set_output_size(target_output_size)
-
-    def set_output_size(self, target_output_size):
-        self.target_output_size = target_output_size
-        self.input_size, self.output_size = self.brute_force_padding(target_output_size)
-        assert ((self.input_size - self.output_size) % 2 == 0)
-        self.input_frames = self.input_size
-        self.output_frames = self.output_size
-
-    def brute_force_padding(self, target_output_size):
-        input_size = target_output_size
-
-        while True:
-            print(f"Testing {input_size}")
-            result = self.simulate_forward(input_size, target_output_size)
-
-            if result is not False:
-                return result
-
-            input_size += 1
-
-    def simulate_forward(self, input_size, target_output_size):
-        try:
-            mix_audio = torch.zeros(1, input_size)
-            piano_source_audio = torch.zeros(1, input_size)
-
-            # Forward pass
-            output = self.forward(mix_audio, piano_source_audio)
-            output_size = output.shape[-1]
-
-            print(f"Output size for input size {input_size}: {output_size}")
-
-            assert output_size >= target_output_size
-            return input_size, output_size
-        except (RuntimeError, AssertionError, ArithmeticError):
-            return False
-
     def forward(self, mix_audio, piano_source_audio):
-        x = torch.cat((mix_audio.unsqueeze(1), piano_source_audio.unsqueeze(1)), dim=1)
+        out = torch.cat((mix_audio.unsqueeze(1), piano_source_audio.unsqueeze(1)), dim=1)
 
         shortcuts = []
-        out = x
 
         for block in self.downsampling_blocks:
             out, short = block(out)
