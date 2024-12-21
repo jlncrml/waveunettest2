@@ -1,3 +1,5 @@
+import random
+
 import torch
 from scipy.signal import butter, lfilter
 from torch.utils.data import Dataset
@@ -97,20 +99,19 @@ class SeparationDataset(torch.utils.data.Dataset):
             for key in ["voice_waveform", "piano_speaker_bleed_waveform", "piano_source_waveform"]
         )
 
-        mix_waveform = voice_waveform + piano_bleed_waveform
-        mix_peak = torch.max(torch.abs(mix_waveform))
+        piano_bleed_waveform = self.__class__.apply_random_db_adjustment(piano_bleed_waveform, -6.0, 3.0)
+        unnormalized_mix_waveform = voice_waveform + piano_bleed_waveform
+        unnormalized_mix_waveform_peak = unnormalized_mix_waveform.abs().max()
 
-        if mix_peak > 0:
-            mix_scale = 1.0 / mix_peak
-            mix_waveform = mix_waveform * mix_scale
-            voice_waveform = voice_waveform * mix_scale
-
-        piano_source_peak = torch.max(torch.abs(piano_source_audio))
+        mix_scale = 1.0 / unnormalized_mix_waveform_peak
         
-        if piano_source_peak > 0:
-            piano_source_audio = piano_source_audio * (1.0 / piano_source_peak)
+        mix_waveform = unnormalized_mix_waveform * mix_scale
+        voice_waveform = voice_waveform * mix_scale
 
         mix_waveform[self.output_end:] = 0
+
+        piano_source_audio = piano_source_audio * (1.0 / piano_source_audio.abs().max())
+
         targets = voice_waveform[self.output_start: self.output_end]
 
         return mix_waveform, piano_source_audio, targets
@@ -134,6 +135,15 @@ class SeparationDataset(torch.utils.data.Dataset):
         return torch.tensor(waveform, dtype=torch.float32)
 
     @staticmethod
-    def normalize(waveform):
-        peak = torch.max(torch.abs(waveform))
-        return waveform / peak if peak > 0 else waveform
+    def amplitude_to_dB(amplitude):
+        return 20.0 * torch.log10(amplitude.clamp_min(1e-9))
+
+    @staticmethod
+    def dB_to_amplitude(db):
+        return 10.0 ** (db / 20.0)
+
+    @staticmethod
+    def apply_random_db_adjustment(waveform, min_db, max_db):
+        db_adjustment = random.uniform(min_db, max_db)
+        scale = SeparationDataset.dB_to_amplitude(db_adjustment)
+        return waveform * scale
