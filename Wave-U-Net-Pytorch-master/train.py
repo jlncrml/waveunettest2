@@ -98,14 +98,14 @@ def main(args):
 
     cycle_length = len(train_data) // (BATCH_SIZE * N_CYCLES)
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lr_lambda=lambda step: (
-                MIN_LEARNING_RATE +
-                0.5 * (LEARNING_RATE - MIN_LEARNING_RATE) *
-                (1 + np.cos((step % cycle_length) / cycle_length * np.pi))
-        )
-    )
+    # scheduler = torch.optim.lr_scheduler.LambdaLR(
+    #     optimizer,
+    #     lr_lambda=lambda step: (
+    #             MIN_LEARNING_RATE +
+    #             0.5 * (LEARNING_RATE - MIN_LEARNING_RATE) *
+    #             (1 + np.cos((step % cycle_length) / cycle_length * np.pi))
+    #     )
+    # )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
@@ -128,14 +128,14 @@ def main(args):
 
                 t = time.time()
 
-                # utils.set_cyclic_lr(
-                #     optimizer,
-                #     example_num,
-                #     len(train_data) // BATCH_SIZE,
-                #     N_CYCLES,
-                #     MIN_LEARNING_RATE,
-                #     LEARNING_RATE
-                # )
+                utils.set_cyclic_lr(
+                    optimizer,
+                    example_num,
+                    len(train_data) // BATCH_SIZE,
+                    N_CYCLES,
+                    MIN_LEARNING_RATE,
+                    LEARNING_RATE
+                )
 
                 optimizer.zero_grad()
 
