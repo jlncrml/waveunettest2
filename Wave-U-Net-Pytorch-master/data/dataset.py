@@ -87,21 +87,31 @@ class SeparationDataset(torch.utils.data.Dataset):
         pad_back = max(end_pos - item["length"], 0)
         end_pos = min(end_pos, item["length"])
 
-        voice_waveform = torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32))
-        voice_waveform = F.pad(voice_waveform, (pad_front, pad_back), 'constant', 0.0)
-        
-        piano_bleed_waveform = torch.tensor(item["piano_speaker_bleed_waveform"][start_pos:end_pos].astype(np.float32))
-        piano_bleed_waveform = F.pad(piano_bleed_waveform, (pad_front, pad_back), 'constant', 0.0)
+        voice_waveform = F.pad(
+            torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32)),
+            (pad_front, pad_back),
+            'constant',
+            0.0
+        )
+
+        piano_bleed_waveform = F.pad(
+            torch.tensor(item["piano_speaker_bleed_waveform"][start_pos:end_pos].astype(np.float32)),
+            (pad_front, pad_back),
+            'constant',
+            0.0
+        )
+
+        piano_source_audio = F.pad(
+            torch.tensor(item["piano_source_waveform"][start_pos:end_pos].astype(np.float32)),
+            (pad_front, pad_back),
+            'constant',
+            0.0
+        )
 
         mix_audio = voice_waveform + piano_bleed_waveform
         mix_audio[self.output_end:] = 0
 
-        piano_source_audio = torch.tensor(item["piano_source_waveform"][start_pos:end_pos].astype(np.float32))
-        piano_source_audio = F.pad(piano_source_audio, (pad_front, pad_back), 'constant', 0.0)
-
-        targets_data = torch.tensor(item["voice_waveform"][start_pos:end_pos].astype(np.float32))
-        targets_data = F.pad(targets_data, (pad_front, pad_back), 'constant', 0.0)
-        targets = targets_data[self.output_start:self.output_end]
+        targets = voice_waveform[self.output_start:self.output_end]
 
         return mix_audio, piano_source_audio, targets
 
