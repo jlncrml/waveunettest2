@@ -99,11 +99,13 @@ def main(args):
     cycle_length = len(train_data) // BATCH_SIZE // N_CYCLES
 
     # Initialize the scheduler
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+    scheduler = torch.optim.lr_scheduler.CyclicLR(
         optimizer,
-        T_0=(len(train_data) // BATCH_SIZE) // 2,  # Half-epoch cycle length
-        T_mult=1,  # No growth in cycle length
-        eta_min=MIN_LEARNING_RATE
+        base_lr=MIN_LEARNING_RATE,
+        max_lr=LEARNING_RATE,
+        step_size_up=(len(train_data) // BATCH_SIZE) // 4,  # Quarter-epoch ramp-up
+        mode='triangular',
+        cycle_momentum=False
     )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
