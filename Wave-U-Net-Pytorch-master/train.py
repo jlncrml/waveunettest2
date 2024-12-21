@@ -13,6 +13,20 @@ from model.waveunet import Waveunet
 import torch
 import torch.nn as nn
 
+INPUT_LENGTH = 29693
+OUTPUT_LENGTH = 24237
+STRIDES = 4
+SAMPLE_RATE = 12000
+N_LEVELS = 6
+N_FEATURES = 32
+N_WORKERS = 1
+KERNEL_SIZE = 5
+BATCH_SIZE = 16
+N_CYCLES = 2
+PATIENCE = 20
+LEARNING_RATE = 1e-3
+MIN_LEARNING_RATE = 5e-5
+
 
 class LastSamplesMAELoss(nn.Module):
     def __init__(self, n_samples=512):
@@ -29,20 +43,6 @@ class LastSamplesMAELoss(nn.Module):
         loss = self.mae_loss(last_out, last_tgt)
         return loss
 
-
-INPUT_LENGTH = 29693
-OUTPUT_LENGTH = 24237
-STRIDES = 4
-SAMPLE_RATE = 12000
-N_LEVELS = 6
-N_FEATURES = 32
-N_WORKERS = 1
-KERNEL_SIZE = 5
-BATCH_SIZE = 16
-N_CYCLES = 2
-PATIENCE = 20
-LEARNING_RATE = 1e-3
-MIN_LEARNING_RATE = 5e-5
 
 def main(args):
     num_features = [N_FEATURES*2**idx for idx in range(0, N_LEVELS)]
@@ -91,10 +91,26 @@ def main(args):
         worker_init_fn=utils.worker_init_fn
     )
 
-    criterion = nn.L1Loss()
-    filtered_criterion = LastSamplesMAELoss()
+    training_criterion = nn.L1Loss()
+    validation_criterion = LastSamplesMAELoss()
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
+
+    # scheduler = torch.optim.lr_scheduler.LambdaLR(
+    #     optimizer,
+    #     lr_lambda=lambda step: (
+    #         MIN_LEARNING_RATE
+    #         + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
+    #         * (
+    #             1
+    #             + np.cos(
+    #                 (step % (len(train_data) // BATCH_SIZE // N_CYCLES))
+    #                 / (len(train_data) // BATCH_SIZE // N_CYCLES) * np.pi)
+    #             )
+    #         ) / LEARNING_RATE
+    # )
+
+    cycle_length = (len(train_data) // BATCH_SIZE) // N_CYCLES
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -102,12 +118,12 @@ def main(args):
             MIN_LEARNING_RATE
             + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
             * (
-                1
-                + np.cos(
-                    (step % (len(train_data) // BATCH_SIZE // N_CYCLES))
-                    / (len(train_data) // BATCH_SIZE // N_CYCLES) * np.pi)
+                1 + np.cos(
+                    (float(step % cycle_length)
+                    / float(cycle_length)) * np.pi
                 )
-            ) / LEARNING_RATE
+            )
+        ) / LEARNING_RATE
     )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
@@ -133,7 +149,7 @@ def main(args):
 
                 out = model(mix_audio, piano_source_audio)
 
-                loss = criterion(out, targets)
+                loss = training_criterion(out, targets)
 
                 loss.backward()
                 optimizer.step()
@@ -147,15 +163,15 @@ def main(args):
 
                 pbar.update(1)
 
-
-        val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
+        validation_loss = validate(args, model, validation_criterion, val_data)
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
-        if val_loss >= state["best_loss"]:
+
+        if validation_loss >= state["best_loss"]:
             state["worse_epochs"] += 1
         else:
             state["worse_epochs"] = 0
-            state["best_loss"] = val_loss
+            state["best_loss"] = validation_loss
             state["best_checkpoint"] = checkpoint_path
 
         state["epochs"] += 1
@@ -163,7 +179,7 @@ def main(args):
         model_utils.save_model(model, optimizer, state, checkpoint_path)
 
 
-def validate(args, model, criterion1, criterion2, test_data):
+def validate(args, model, criterion, test_data):
     dataloader = torch.utils.data.DataLoader(
         test_data,
         batch_size=BATCH_SIZE,
@@ -173,8 +189,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 
     model.eval()
 
-    total_loss1 = 0.0
-    total_loss2 = 0.0
+    total_loss = 0.0
 
     with torch.no_grad(), tqdm(total=len(test_data) // BATCH_SIZE) as pbar:
         for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
@@ -185,23 +200,19 @@ def validate(args, model, criterion1, criterion2, test_data):
 
             out = model(mix_audio, piano_source_audio)
 
-            loss1 = criterion1(out, target)
-            loss1_val = loss1.item()
-
-            loss2 = criterion2(out, target)
-            loss2_val = loss2.item()
+            loss = criterion(out, target)
+            loss_val = loss.item()
 
             count = example_num + 1
-            total_loss1 += (1.0 / count) * (loss1_val - total_loss1)
-            total_loss2 += (1.0 / count) * (loss2_val - total_loss2)
+            total_loss += (1.0 / count) * (loss_val - total_loss)
 
             pbar.set_description(
-                f"Avg MAE: {total_loss1:.5f}, Avg Last MAE: {total_loss2:.5f}"
+                f"Validation Loss: {total_loss:.5f}"
             )
 
             pbar.update(1)
 
-    return total_loss1, total_loss2 # Return both averaged losses
+    return total_loss
 
 
 if __name__ == '__main__':
