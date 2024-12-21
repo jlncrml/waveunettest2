@@ -96,13 +96,13 @@ class SeparationDataset(torch.utils.data.Dataset):
             )
             for key in ["voice_waveform", "piano_speaker_bleed_waveform", "piano_source_waveform"]
         )
-        
+
         mix_audio = voice_waveform + piano_bleed_waveform
         mix_audio[self.output_end:] = 0
 
         targets = voice_waveform[self.output_start:self.output_end]
 
-        return mix_audio, piano_source_audio, targets
+        return mix_audio * 3, piano_source_audio * 3, targets * 3
 
     @staticmethod
     def downsampled_waveform(path):
