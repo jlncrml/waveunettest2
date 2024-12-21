@@ -127,13 +127,11 @@ def main(args):
                 if torch.cuda.is_available():
                     mix_audio, piano_source_audio, target = (t.cuda() for t in [mix_audio, piano_source_audio, target])
 
-                t = time.time()
-
                 optimizer.zero_grad()
 
                 out = model(mix_audio, piano_source_audio)
 
-                loss = training_criterion(out, targets)
+                loss = training_criterion(out, target)
 
                 loss.backward()
                 optimizer.step()
@@ -141,9 +139,6 @@ def main(args):
                 scheduler.step()
 
                 state["step"] += 1
-
-                t = time.time() - t  # Timing
-                avg_time += (1.0 / (example_num + 1)) * (t - avg_time)
 
                 pbar.update(1)
 
