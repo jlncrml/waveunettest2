@@ -124,15 +124,6 @@ def main(args):
 
                 t = time.time()
 
-                # utils.set_cyclic_lr(
-                #     optimizer,
-                #     example_num,
-                #     len(train_data) // BATCH_SIZE,
-                #     N_CYCLES,
-                #     MIN_LEARNING_RATE,
-                #     LEARNING_RATE
-                # )
-
                 optimizer.zero_grad()
 
                 out = model(mix_audio, piano_source_audio)
@@ -141,10 +132,6 @@ def main(args):
 
                 loss.backward()
                 optimizer.step()
-
-                current_lr = scheduler.get_last_lr()
-                print(f"Current LR: {current_lr}")
-
                 scheduler.step()
 
                 state["step"] += 1
