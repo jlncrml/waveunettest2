@@ -96,16 +96,23 @@ def main(args):
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-    cycle_length = len(train_data) // (BATCH_SIZE * N_CYCLES)
+    cycle_length = (len(train_data) // BATCH_SIZE) // N_CYCLES
 
-    # scheduler = torch.optim.lr_scheduler.LambdaLR(
-    #     optimizer,
-    #     lr_lambda=lambda step: (
-    #             MIN_LEARNING_RATE +
-    #             0.5 * (LEARNING_RATE - MIN_LEARNING_RATE) *
-    #             (1 + np.cos((step % cycle_length) / cycle_length * np.pi))
-    #     )
-    # )
+    def lr_lambda(step):
+        # Which cycle are we in?
+        curr_cycle = min(step // cycle_length, N_CYCLES - 1)
+        curr_it = step - cycle_length * curr_cycle
+
+        return (
+                MIN_LEARNING_RATE
+                + 0.5 * (LEARNING_RATE - MIN_LEARNING_RATE)
+                * (1 + np.cos(float(curr_it) / float(cycle_length) * np.pi))
+        ) / LEARNING_RATE
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lr_lambda
+    )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
@@ -128,14 +135,14 @@ def main(args):
 
                 t = time.time()
 
-                utils.set_cyclic_lr(
-                    optimizer,
-                    example_num,
-                    len(train_data) // BATCH_SIZE,
-                    N_CYCLES,
-                    MIN_LEARNING_RATE,
-                    LEARNING_RATE
-                )
+                # utils.set_cyclic_lr(
+                #     optimizer,
+                #     example_num,
+                #     len(train_data) // BATCH_SIZE,
+                #     N_CYCLES,
+                #     MIN_LEARNING_RATE,
+                #     LEARNING_RATE
+                # )
 
                 optimizer.zero_grad()
 
@@ -149,7 +156,7 @@ def main(args):
                 # current_lr = scheduler.get_last_lr()
                 # print(f"Current LR: {current_lr}")
 
-                # scheduler.step()
+                scheduler.step()
 
                 state["step"] += 1
 
