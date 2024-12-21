@@ -146,7 +146,7 @@ def main(args):
                 loss.backward()
                 optimizer.step()
 
-                current_lr = scheduler.get_last_lr()
+                # current_lr = scheduler.get_last_lr()
                 # print(f"Current LR: {current_lr}")
 
                 # scheduler.step()
