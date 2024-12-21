@@ -97,7 +97,12 @@ class SeparationDataset(torch.utils.data.Dataset):
             for key in ["voice_waveform", "piano_speaker_bleed_waveform", "piano_source_waveform"]
         )
 
-        scale = 1.0 / (voice_waveform + piano_bleed_waveform).abs().max() + 1e-9
+        peak = (voice_waveform + piano_bleed_waveform).abs().max()
+        if peak == 0:
+            scale = 1.0  # Avoid scaling silent inputs
+        else:
+            scale = 1.0 / peak
+        scale = 1.0 / peak
 
         scaled_voice_waveform = voice_waveform * scale
         scaled_piano_bleed_waveform = piano_bleed_waveform * scale
