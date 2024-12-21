@@ -11,7 +11,6 @@ from data.dataset import get_dataset_folds
 from model.waveunet import Waveunet
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class LastSamplesMAELoss(nn.Module):
@@ -30,12 +29,30 @@ class LastSamplesMAELoss(nn.Module):
         return loss
 
 
-def main(args):
-    num_features = [args.features*i for i in range(1, args.levels+1)] if args.feature_growth == "add" else \
-                   [args.features*2**i for i in range(0, args.levels)]
-    target_outputs = int(args.output_size * args.sr)
+INPUT_LENGTH = 29693
+OUTPUT_LENGTH = 24237
+STRIDES = 4
+SAMPLE_RATE = 12000
+N_LEVELS = 6
+N_FEATURES = 32
+N_WORKERS = 1
+KERNEL_SIZE = 5
+BATCH_SIZE = 16
+N_CYCLES = 2
+PATIENCE = 20
+LEARNING_RATE = 1e-3
+MIN_LEARNING_RATE = 5e-5
 
-    model = Waveunet(num_features, kernel_size=args.kernel_size, target_output_size=target_outputs, strides=args.strides)
+def main(args):
+    num_features = [N_FEATURES*2**idx for idx in range(0, N_LEVELS)]
+
+    model = Waveunet(
+        num_features,
+        kernel_size=KERNEL_SIZE,
+        input_length=INPUT_LENGTH,
+        output_length=OUTPUT_LENGTH,
+        strides=STRIDES
+    )
 
     if args.cuda:
         model = model_utils.DataParallel(model)
@@ -47,10 +64,10 @@ def main(args):
         dataset_data,
         "train",
         ["voice"],
-        args.sr,
+        SAMPLE_RATE,
         1,
-        model.input_frames,
-        model.output_frames,
+        model.input_length,
+        model.output_length,
         True
     )
 
@@ -58,38 +75,38 @@ def main(args):
         dataset_data,
         "val",
         ["voice"],
-        args.sr,
+        SAMPLE_RATE,
         1,
-        model.input_frames,
-        model.output_frames,
+        model.input_length,
+        model.output_length,
         False
     )
 
     dataloader = torch.utils.data.DataLoader(
         train_data,
-        batch_size=args.batch_size,
+        batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=args.num_workers,
+        num_workers=N_WORKERS,
         worker_init_fn=utils.worker_init_fn
     )
 
     criterion = nn.L1Loss()
     filtered_criterion = LastSamplesMAELoss()
 
-    optimizer = Adam(params=model.parameters(), lr=args.lr)
+    optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
 
     print('TRAINING START')
 
-    while state["worse_epochs"] < args.patience:
+    while state["worse_epochs"] < PATIENCE:
         print("Training one epoch from iteration " + str(state["step"]))
 
         avg_time = 0.
 
         model.train()
 
-        with tqdm(total=len(train_data) // args.batch_size) as pbar:
+        with tqdm(total=len(train_data) // BATCH_SIZE) as pbar:
             np.random.seed()
             for example_num, (mix_audio, piano_source_audio, targets) in enumerate(dataloader):
                 if args.cuda:
@@ -102,26 +119,21 @@ def main(args):
                 utils.set_cyclic_lr(
                     optimizer,
                     example_num,
-                    len(train_data) // args.batch_size,
-                    args.cycles,
-                    args.min_lr,
-                    args.lr
+                    len(train_data) // BATCH_SIZE,
+                    N_CYCLES,
+                    MIN_LEARNING_RATE,
+                    LEARNING_RATE
                 )
 
-                optimizer.zero_grad()  # Zero gradients
+                optimizer.zero_grad()
 
-                # Forward pass with two inputs
                 out = model(mix_audio, piano_source_audio)
 
-                # Compute loss
                 loss = criterion(out, targets)
 
-                # Backward pass and optimization
                 loss.backward()
                 optimizer.step()
 
-                # Update loss tracking
-                avg_loss = loss.item()
                 state["step"] += 1
 
                 t = time.time() - t  # Timing
@@ -131,29 +143,26 @@ def main(args):
 
 
         val_loss, last_val_loss = validate(args, model, criterion, filtered_criterion, val_data) # VALIDATE
-        print("VALIDATION FINISHED: LOSS: " + str(val_loss) + "LAST 2048 LOSS: " + str(last_val_loss))
 
         checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint_" + str(state["step"]))
         if val_loss >= state["best_loss"]:
             state["worse_epochs"] += 1
         else:
-            print("MODEL IMPROVED ON VALIDATION SET!")
             state["worse_epochs"] = 0
             state["best_loss"] = val_loss
             state["best_checkpoint"] = checkpoint_path
 
         state["epochs"] += 1
-        print("Saving model...")
-        model_utils.save_model(model, optimizer, state, checkpoint_path)
 
+        model_utils.save_model(model, optimizer, state, checkpoint_path)
 
 
 def validate(args, model, criterion1, criterion2, test_data):
     dataloader = torch.utils.data.DataLoader(
         test_data,
-        batch_size=args.batch_size,
+        batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=args.num_workers
+        num_workers=N_WORKERS
     )
 
     model.eval()
@@ -161,7 +170,7 @@ def validate(args, model, criterion1, criterion2, test_data):
     total_loss1 = 0.0
     total_loss2 = 0.0
 
-    with torch.no_grad(), tqdm(total=len(test_data) // args.batch_size) as pbar:
+    with torch.no_grad(), tqdm(total=len(test_data) // BATCH_SIZE) as pbar:
         for example_num, (mix_audio, piano_source_audio, target) in enumerate(dataloader):
             if args.cuda:
                 mix_audio = mix_audio.cuda()
@@ -183,6 +192,7 @@ def validate(args, model, criterion1, criterion2, test_data):
             pbar.set_description(
                 f"Avg MAE: {total_loss1:.5f}, Avg Last MAE: {total_loss2:.5f}"
             )
+
             pbar.update(1)
 
     return total_loss1, total_loss2 # Return both averaged losses
@@ -191,24 +201,7 @@ def validate(args, model, criterion1, criterion2, test_data):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cuda', action='store_true')
-    parser.add_argument('--num_workers', type=int, default=1)
-    parser.add_argument('--features', type=int, default=32)
     parser.add_argument('--dataset_dir', type=str, default="/Volumes/SANDISK/WaveUNetTrainingData")
-    parser.add_argument('--hdf_dir', type=str, default="hdf")
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints/waveunet')
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--min_lr', type=float, default=5e-5)
-    parser.add_argument('--cycles', type=int, default=2)
-    parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--levels', type=int, default=6)
-    parser.add_argument('--depth', type=int, default=1)
-    parser.add_argument('--sr', type=int, default=12000)
-    parser.add_argument('--kernel_size', type=int, default=5)
-    parser.add_argument('--output_size', type=float, default=2)
-    parser.add_argument('--strides', type=int, default=4)
-    parser.add_argument('--patience', type=int, default=20)
-    parser.add_argument('--example_freq', type=int, default=200)
-    parser.add_argument('--res', type=str, default="learned")
-    parser.add_argument('--feature_growth', type=str, default="double")
     args = parser.parse_args()
     main(args)
