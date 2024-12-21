@@ -96,16 +96,16 @@ def main(args):
 
     optimizer = Adam(params=model.parameters(), lr=LEARNING_RATE)
 
-    cycle_length = len(train_data) // BATCH_SIZE // N_CYCLES
+    total_steps = len(train_data) // BATCH_SIZE
+    cycle_length = total_steps // 2  # Assuming a restart at 50% (halfway)
 
-    # Initialize the scheduler
-    scheduler = torch.optim.lr_scheduler.CyclicLR(
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
-        base_lr=MIN_LEARNING_RATE,
-        max_lr=LEARNING_RATE,
-        step_size_up=(len(train_data) // BATCH_SIZE) // 4,  # Quarter-epoch ramp-up
-        mode='triangular',
-        cycle_momentum=False
+        lr_lambda=lambda step: (
+                MIN_LEARNING_RATE +
+                (LEARNING_RATE - MIN_LEARNING_RATE) *
+                (1 - abs((step % cycle_length) / cycle_length - 0.5) * 2)
+        )
     )
 
     state = {"step": 0, "worse_epochs": 0, "epochs": 0, "best_loss": np.Inf}
